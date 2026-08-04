@@ -6,7 +6,7 @@ from software_service.homevisit_service import homevisitService ,homevisitResult
 @tool
 def save_visit_tool(
     name: str,
-    phone: str,
+   phone_number: str,
     date: str,
     details: str,
     address: str,
@@ -21,8 +21,9 @@ def save_visit_tool(
 
     return homevisitService.create_visit(
         name=name,
-        phone_number=phone,
+        phone_number=phone_number,
         date=date,
         details=details,
+        address= address,
         comes_from=platform_name,
     )

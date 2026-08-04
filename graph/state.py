@@ -14,7 +14,7 @@ class AgentState(TypedDict):
 
     # routing
     intent: Optional[str]
-    refined_query: Optional[str]
+    refined_queries: Optional[list]
 
    
     # memory

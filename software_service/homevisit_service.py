@@ -50,11 +50,11 @@ class homevisitService:
     # ── single ────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def get_visit_by_id(booking_id):
-        booking = db.session.get(Homevisit, booking_id)
-        if not booking:
+    def get_visit_by_id(visit_id):
+        visit = db.session.get(Homevisit, visit_id)
+        if not visit:
             return None, "الحجز غير موجود"
-        return booking, "تم العثور على الحجز"
+        return  visit, "تم العثور على الحجز"
 
     @staticmethod
     def get_visit_by_reference(reference_id):
@@ -83,7 +83,7 @@ class homevisitService:
                 comes_from=comes_from,
                 status=Status.PENDING,
                 booking_time=datetime.now(timezone.utc),
-                address=address
+                address=address,
             )
             db.session.add(visit)
             db.session.commit()
@@ -104,7 +104,7 @@ class homevisitService:
                         comes_from=comes_from,
                         status=Status.PENDING,
                         booking_time=datetime.now(timezone.utc),
-                        address=address
+                        address=address,
 
                     )
                     db.session.add(visit)
@@ -131,6 +131,8 @@ class homevisitService:
             visit.date = date
         if details is not None:
             visit.details = details
+        if address is not None:
+            visit.address = address   
 
         try:
             db.session.commit()

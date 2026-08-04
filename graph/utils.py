@@ -16,7 +16,7 @@ from reportlab.platypus import (
     Spacer, Table, TableStyle,
 )
 
-from models.models import RequestCounter, db
+from models.models import RequestCounter,db
 
 def strip_tags(text: str) -> str:
     """Remove all XML-style tags injected by LLM prompts from a reply string."""
@@ -112,6 +112,7 @@ def generate_booking_pdf(
     date: str,
     details: str,
     reference_id: str,
+    address:str,
 ) -> bytes:
 
     font     = _register_font()
@@ -188,6 +189,7 @@ def generate_booking_pdf(
         ("Phone",            "رقم الهاتف",    phone),
         ("Appointment Date", "تاريخ الموعد",  date),
         ("Required Analysis","التحاليل المطلوبة", details),
+        ("address","العوان",address)
     ]
 
     rows = []
@@ -242,3 +244,69 @@ def generate_booking_pdf(
 
     doc.build(story)
     return buffer.getvalue()
+import json
+import re
+import ast
+from knowledge.schemas import AliasNames
+
+
+def parse_alias_names(value) -> AliasNames:
+    """يحول القيمة المخزنة (JSON string / repr string / dict / AliasNames) لـ AliasNames object"""
+    if isinstance(value, AliasNames):
+        return value
+    if isinstance(value, dict):
+        return AliasNames(**value)
+    if not isinstance(value, str) or not value.strip():
+        return AliasNames()
+
+    value = value.strip()
+
+    if value.startswith('{'):
+        try:
+            return AliasNames(**json.loads(value))
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    result = {}
+    list_match = re.search(r"aliases=(\[.*\])\s*$", value)
+    if list_match:
+        try:
+            result['aliases'] = ast.literal_eval(list_match.group(1))
+        except Exception:
+            result['aliases'] = []
+        value = value[:list_match.start()]
+
+    for field in ['alias', 'measurement', 'equivalent_name']:
+        m = re.search(rf"{field}='((?:[^'\\]|\\.)*)'", value)
+        if m:
+            result[field] = m.group(1)
+
+    return AliasNames(**result)
+
+
+    
+def parse_keywords(value) -> list[str]:
+    """يحول القيمة المخزنة (JSON list string / comma-separated string / list) لـ list[str]"""
+    if isinstance(value, list):
+        return [str(k).strip() for k in value if str(k).strip()]
+    if not isinstance(value, str) or not value.strip():
+        return []
+
+    value = value.strip()
+
+    # الحالة الطبيعية: JSON list زي '["a", "b", "c"]'
+    if value.startswith('['):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(k).strip() for k in parsed if str(k).strip()]
+        except json.JSONDecodeError:
+            try:
+                parsed = ast.literal_eval(value)
+                if isinstance(parsed, list):
+                    return [str(k).strip() for k in parsed if str(k).strip()]
+            except Exception:
+                pass
+
+    # fallback: comma-separated string عادي "a, b, c"
+    return [k.strip() for k in value.split(',') if k.strip()]

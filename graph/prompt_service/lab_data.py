@@ -23,7 +23,6 @@ class LabDataService:
         # Lab info
         lab_info = (
             f"Laboratory Name: {lab.name}\n"
-            f"Address: {lab.address}\n"
             f"Info: {lab.info}"
         )
 
@@ -41,7 +40,6 @@ class LabDataService:
         if lab:
             return (
                 f"Laboratory Name: {lab.name}\n"
-                f"Address: {lab.address}\n"
                 f"Info: {lab.info}"
             )
         return "No laboratory found for the given page ID."

@@ -21,6 +21,7 @@ REQUIRED FIELDS
 - name (Patient Name)
 - phone (Phone Number)
 - details (The list of medical analyses/tests they want to book, e.g., 'تحليل دم', 'صورة دم كاملة').
+-address(patient address)
 - date (Appointment Date)
 
 ====================
@@ -138,14 +139,15 @@ Last bot message: {last_bot_message}
     booking_pdf       = None
 
     # ── save ──────────────────────────────────────────────────────────────────
-    if parsed.ready_to_save and parsed.confirmed and all_fields_present:
+    # ── save ──────────────────────────────────────────────────────────────────
+    if parsed.ready_to_save and all_fields_present:   # ← شلنا شرط parsed.confirmed
         try:
             result = save_visit_tool.invoke(input={
                 **visit_data,
                 "comes_from": str(platform_id or "unknown"),
             })
 
-            if result.success and result.booking:
+            if result.success and result.visit:
                 booking_saved     = True
                 booking_reference = result.visit.reference_id
                 booking_pdf       = generate_booking_pdf(
@@ -157,17 +159,18 @@ Last bot message: {last_bot_message}
                     address=visit_data.get("address")
                 )
 
+                # رد "pending" بس، مش تأكيد نهائي
                 clean_reply = detect_language_fallback(
                     user_message,
                     arabic=(
-                        f"تم تأكيد الحجز بنجاح ✅\n"
-                        f"رقم الحجز: *{booking_reference}*\n"
-                        f"سيتواصل معك فريقنا قريبًا."
+                        f"تم استلام طلب الحجز الخاص بيك ✅\n"
+                        f"رقم الطلب: *{booking_reference}*\n"
+                        f"هيتم تأكيد الحجز معاك من فريقنا قريبًا."
                     ),
                     default=(
-                        f"Your booking has been confirmed ✅\n"
+                        f"Your booking request has been received ✅\n"
                         f"Reference: *{booking_reference}*\n"
-                        f"Our team will contact you soon."
+                        f"Our team will confirm it with you shortly."
                     ),
                 )
             else:
@@ -177,7 +180,7 @@ Last bot message: {last_bot_message}
             print(f"[homevisit Node] Tool error: {e}")
             booking_saved  = False
             booking_pdf    = None
-            parsed.summary = current_summary   # rollback summary
+            parsed.summary = current_summary
 
             clean_reply = detect_language_fallback(
                 user_message,

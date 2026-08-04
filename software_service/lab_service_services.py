@@ -21,7 +21,7 @@ class LabServiceService:
             query = query.filter(
                 db.or_(
                     LabService.name.ilike(f'%{search}%'),
-                    LabService.specimen.ilike(f'%{search}%'),
+                    LabService.sample_type.ilike(f'%{search}%'),
                 )
             )
 
@@ -40,7 +40,7 @@ class LabServiceService:
     # -- create -------------------------------------------------------------------
 
     @staticmethod
-    def create_lab(name, price, laboratory_id=None, specimen=None,
+    def create_lab(name, price, laboratory_id=None, sample_type=None,
                     durations=None, patient_instructions=None):
         if not name or not name.strip():
             return None, "اسم التحليل مطلوب"
@@ -64,7 +64,7 @@ class LabServiceService:
             laboratory_id=laboratory_id,
             name=name.strip(),
             price=price,
-            specimen=(specimen or "").strip() or None,
+            sample_type=(sample_type or "").strip() or None,
             durations=(durations or "").strip() or None,
             patient_instructions=(patient_instructions or "").strip() or None,
         )
@@ -73,7 +73,7 @@ class LabServiceService:
     # -- update -------------------------------------------------------------------
 
     @staticmethod
-    def update_lab(lab_id, name=None, price=None, specimen=None,
+    def update_lab(lab_id, name=None, price=None, sample_type=None,
                     durations=None, patient_instructions=None):
         lab = db.session.get(LabService, lab_id)
         if not lab:
@@ -86,8 +86,8 @@ class LabServiceService:
                 lab.price = float(price)
             except (TypeError, ValueError):
                 return None, "السعر غير صحيح"
-        if specimen is not None:
-            lab.specimen = specimen.strip() or None
+        if sample_type is not None:
+            lab.sample_type = sample_type.strip() or None
         if durations is not None:
             lab.durations = durations.strip() or None
         if patient_instructions is not None:

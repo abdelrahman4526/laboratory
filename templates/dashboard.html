@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}لوحة التحكم — مختبر الإسكندرية{% endblock %}
+
+{% block topbar_title %}لوحة التحكم المركزية{% endblock %}
+{% block topbar_sub %}متابعة التحاليل، الحجوزات، والروشتات لحظياً{% endblock %}
+
+{% block content %}
+<div class="dashboard-hero">
+  <div class="hero-welcome">
+    <div class="welcome-badge">
+      <span class="pulse-dot"></span>
+      النظام متصل ونشط
+    </div>
+    <h2>أهلاً بك، {{ current_user.username }} 👋</h2>
+    <p>أهلاً بك في منصة إدارة المختبر الآلية. يمكنك متابعة طلبات الروشتات، الحجوزات، وإدارة خدمات المعمل بكل سهولة.</p>
+  </div>
+  <div class="hero-actions">
+    <a href="{{ url_for('list_inquiries') }}" class="btn btn-primary btn-lg">
+      <i data-lucide="file-text"></i>
+      مراجعة الروشتات
+      {% if pending_inquiries_count and pending_inquiries_count > 0 %}
+      <span class="badge-count">{{ pending_inquiries_count }}</span>
+      {% endif %}
+    </a>
+    <a href="{{ url_for('create_lab') }}" class="btn btn-outline btn-lg">
+      <i data-lucide="plus-circle"></i>
+      إضافة تحليل جديد
+    </a>
+  </div>
+</div>
+
+<!-- Stats Grid -->
+<div class="stats-grid">
+  
+  <div class="stat-card stat-card-hover">
+    <div class="stat-icon si-amber">
+      <i data-lucide="file-clock"></i>
+    </div>
+    <div class="stat-details">
+      <div class="stat-value">{{ pending_inquiries_count or 0 }}</div>
+      <div class="stat-label">روشتات قيد المراجعة</div>
+      <div class="stat-sub text-amber">تحتاج إلى تأكيد الطبيب</div>
+    </div>
+  </div>
+
+  <div class="stat-card stat-card-hover">
+    <div class="stat-icon si-blue">
+      <i data-lucide="calendar-check"></i>
+    </div>
+    <div class="stat-details">
+      <div class="stat-value">مفعل</div>
+      <div class="stat-label">نظام الحجوزات</div>
+      <div class="stat-sub text-blue">متاح عبر واتساب وفيس بوك</div>
+    </div>
+  </div>
+
+  <div class="stat-card stat-card-hover">
+    <div class="stat-icon si-green">
+      <i data-lucide="bot"></i>
+    </div>
+    <div class="stat-details">
+      <div class="stat-value">AI Agent</div>
+      <div class="stat-label">مساعد المختبر الذكي</div>
+      <div class="stat-sub text-green">جاهز للرد التلقائي 24/7</div>
+    </div>
+  </div>
+
+  <div class="stat-card stat-card-hover">
+    <div class="stat-icon si-purple">
+      <i data-lucide="flask-conical"></i>
+    </div>
+    <div class="stat-details">
+      <div class="stat-value">نشط</div>
+      <div class="stat-label">قاعدة بيانات التحاليل</div>
+      <div class="stat-sub text-purple">محدثة ومربوطة بالذكاء الاصطناعي</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Quick Shortcuts -->
+<div class="section-title">
+  <h3><i data-lucide="layout-grid"></i> الوصول السريع</h3>
+</div>
+
+<div class="quick-grid">
+  
+  <a href="{{ url_for('list_inquiries') }}" class="quick-card">
+    <div class="quick-icon bg-amber">
+      <i data-lucide="file-text"></i>
+    </div>
+    <div class="quick-info">
+      <h4>قائمة الروشتات</h4>
+      <p>عرض الصور المستخرجة بواسطة الذكاء الاصطناعي وتحقق الأطباء</p>
+    </div>
+    <i data-lucide="arrow-left" class="quick-arrow"></i>
+  </a>
+
+  <a href="{{ url_for('list_bookings') }}" class="quick-card">
+    <div class="quick-icon bg-blue">
+      <i data-lucide="calendar"></i>
+    </div>
+    <div class="quick-info">
+      <h4>إدارة الحجوزات</h4>
+      <p>متابعة وتأكيد حجوزات التحاليل المنزلية والزيارات</p>
+    </div>
+    <i data-lucide="arrow-left" class="quick-arrow"></i>
+  </a>
+
+  <a href="{{ url_for('list_labs') }}" class="quick-card">
+    <div class="quick-icon bg-purple">
+      <i data-lucide="clipboard-list"></i>
+    </div>
+    <div class="quick-info">
+      <h4>دليل التحاليل</h4>
+      <p>إضافة وتعديل أسعار التحاليل والشروط والتعليمات الطبية</p>
+    </div>
+    <i data-lucide="arrow-left" class="quick-arrow"></i>
+  </a>
+
+ 
+
+</div>
+{% endblock %}
