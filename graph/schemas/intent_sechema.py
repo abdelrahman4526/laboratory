@@ -8,6 +8,7 @@ class IntentType(str, Enum):
     INQUIRY = "inquiry"
     COMPLAINT = "complaint"
     DIRECT = "direct"
+    LABRESULTS  = "labresults"
 
 
 class RefinedQuery(BaseModel):

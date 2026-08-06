@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
 {% block title %}تفاصيل الحجز{% endblock %}
 {% block topbar_title %}تفاصيل الحجز{% endblock %}
-{% block topbar_sub %}{{ visit.name }} — #{{ booking.reference_id }}{% endblock %}
+{% block topbar_sub %}{{ visit.name }} — #{{ visit.reference_id }}{% endblock %}
 
 {% block topbar_actions %}
   <a href="{{ url_for('edit_booking', visit_id=visit.id) }}" class="btn btn-ghost">تعديل</a>
-  <form method="POST" action="{{ url_for('delete_booking',visit_id=visit.id) }}"
-        onsubmit="return confirm('هل أنت متأكد؟')">
+  <form method="POST" action="{{ url_for('delete_booking', visit_id=visit.id) }}"
+        onsubmit="return confirm('هل أنت متأكد؟')" style="display:inline;">
     <button type="submit" class="btn btn-danger">حذف</button>
   </form>
 {% endblock %}
@@ -20,7 +20,7 @@
     <div class="card-header">
       <span class="card-title">بيانات الحجز</span>
       <code style="background:rgba(99,102,241,.1);color:#818cf8;padding:.25rem .75rem;border-radius:6px;font-size:.9rem;">
-        #{{ booking.reference_id }}
+        #{{ visit.reference_id }}
       </code>
     </div>
     <div style="padding:1.5rem;display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
@@ -44,10 +44,14 @@
         <div class="text-muted" style="font-size:.8rem;margin-bottom:.35rem;">المصدر</div>
         <div>{{ visit.comes_from or '—' }}</div>
       </div>
+      <div>
+        <div class="text-muted" style="font-size:.8rem;margin-bottom:.35rem;">وقت الحجز</div>
+        <div>{{ visit.time or '—' }}</div>
+      </div>
 
       <div>
         <div class="text-muted" style="font-size:.8rem;margin-bottom:.35rem;">وقت التسجيل</div>
-        <div>{{ visit.booking_time.strftime('%Y-%m-%d %H:%M') if booking.booking_time else '—' }}</div>
+        <div>{{ visit.booking_time.strftime('%Y-%m-%d %H:%M') if visit.booking_time else '—' }}</div>
       </div>
 
       {% if visit.details %}
@@ -72,12 +76,22 @@
       <span class="card-title">الحالة</span>
     </div>
     <div style="padding:1.5rem;">
-      <form method="POST" action="{{ url_for('update_booking_status', booking_id=booking.id) }}">
+      {% if visit.status.value == 'Pending' or visit.status.name == 'PENDING' %}
+      <form method="POST" action="{{ url_for('update_booking_status', visit_id=visit.id) }}" style="margin-bottom: 1.25rem;">
+        <input type="hidden" name="status" value="Confirmed">
+        <button type="submit" class="btn" style="width: 100%; justify-content: center; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; border: none; font-weight: 700; padding: 10px 14px; border-radius: 10px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3); font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="send" style="width: 16px; height: 16px;"></i>
+          تأكيد وإرسال للعميل 🚀
+        </button>
+      </form>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('update_booking_status', visit_id=visit.id) }}">
         <div class="form-group">
-          <label>تغيير الحالة</label>
-          <select name="status" class="form-control status-select status-{{ booking.status.value | lower | replace(' ', '-') }}">
+          <label>تغيير الحالة يدويًا</label>
+          <select name="status" class="form-control status-select status-{{ visit.status.value | lower | replace(' ', '-') }}">
             {% for s in all_statuses %}
-              <option value="{{ s.value }}" {% if booking.status == s %}selected{% endif %}>
+              <option value="{{ s.value }}" {% if visit.status == s %}selected{% endif %}>
                 {{ s.value }}
               </option>
             {% endfor %}
@@ -88,10 +102,11 @@
 
       <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border);">
         <div class="text-muted" style="font-size:.8rem;margin-bottom:.5rem;">الحالة الحالية</div>
-        <span class="pill pill-{{ booking.status.value | lower | replace(' ', '-') }}" style="font-size:.95rem;padding:.4rem 1rem;">
+        <span class="pill pill-{{ visit.status.value | lower | replace(' ', '-') }}" style="font-size:.95rem;padding:.4rem 1rem;">
           {{ visit.status.value }}
         </span>
       </div>
+
     </div>
   </div>
 

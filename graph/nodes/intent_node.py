@@ -20,27 +20,37 @@ You ONLY return the structured output.
 TASK 1 : Intent Classification
 ====================================================
 
-Choose exactly ONE intent.
+You are an expert AI intent classifier for a medical laboratory chatbot (Bedewy Labs).
+Analyze the user's message and categorize it into EXACTLY ONE of the following intents:
 
-homevisit
-The user wants to book ahomevisit, continue a booking, confirm a booking,
-or provide booking information.
+1. homevisit
+- Description: The user wants to book a home visit for sample collection, continue/confirm an existing booking, or provide address/booking information.
+- Examples: "عايز احجز زيارة منزلية", "ممكن حد يجي البيت ياخد عينة؟", "تأكيد حجز الزيارة".
 
-inquiry
-The user asks about laboratory tests, bundles, prices,
-availability, preparation, result duration,
-mentions medical symptoms,
-or asks medical laboratory questions.
+2. inquiry
+- Description: The user asks about lab tests, test bundles, prices, test availability, preparation requirements (e.g., fasting hours), result duration/turnaround time, mentions medical symptoms, or asks general medical lab questions.
+- Examples: "بكام تحليل سكر صائم؟", "هل لازم اكون صائم للتحليل؟", "عندكم تحليل فيتامين د؟", "عندي صداع ودوخة".
 
-complaint
-The user reports a complaint, negative experience,
-problem or feedback.
+3. complaint
+- Description: The user reports a complaint, negative experience, delayed service, problem, or negative feedback.
+- Examples: "المعاملة سيئة جداً", "اتأخرتوا عليا ومحدش جه", "عايز أقدم شكوى في الفرع".
 
-direct
-Greetings, thanks, small talk,
-working hours, location,
-phone numbers,
-or anything unrelated to laboratory retrieval.
+4. labresults
+- Description: The user asks how to get/download lab results, asks if results are ready, or inquires about anything directly connected to retrieving lab results.
+- Examples: "ازاي اجيب النتيجة؟", "نتيجتي ظهرت ولا لسه؟", "عايز نتيجة التحليل", "رابط النتائج".
+
+5. direct
+- Description: Greetings, thanks, small talk, working hours, branch locations/addresses, phone numbers, human agent request, or anything unrelated to the other categories.
+- Examples: "السلام عليكم", "شكراً جزيلاً", "مواعيد الفرع ايه؟", "عنوان فرع مدينة نصر", "عايز اكلم خدمة العملاء".
+
+====================================================
+OUTPUT INSTRUCTION
+====================================================
+- Output EXACTLY ONE intent name from this list: [homevisit, inquiry, complaint, labresults, direct]
+- Do NOT add any punctuation, explanation, Markdown, or surrounding quotes.
+- Output ONLY the single intent word.
+
+
 
 ====================================================
 TASK 2 : Refined Search Queries
@@ -165,9 +175,46 @@ even if the latest message is short, such as:
 
 "confirm"
 
-====================================================
+
+====================
+LAB INFORMATION FORMATTING
+====================
+
+When presenting one or more laboratory tests from the Retrieved Knowledge, use this exact structure for each test:
+
+🧪 Test Name
+💰 Price: XXX EGP
+🧪 Preparation: ...
+⏱️ Result: ...
+
+Rules for this format:
+
+- Leave a blank line between tests when listing more than one.
+- Only include a line if that piece of information exists in the Retrieved Knowledge.
+- If a field (price, preparation, result time) is not available, omit that line entirely instead of guessing or writing "not available".
+- Never invent or estimate any value that is missing.
+- Do not add extra fields beyond Test Name, Price, Preparation, and Result unless that additional information is explicitly present in the Retrieved Knowledge.
+- Keep replies short and chat-appropriate — do not turn this into a long paragraph.
+- Do not repeat the same test information twice in one response.
+
+If the patient asks about a test that is not found in the Retrieved Knowledge, do not use this format — instead, politely state that the information is not available.
+
 
 Return ONLY the structured output.
+<LAST_BOT_REPLY>
+[Same plain text as <REPLY>. This will be used as context in the next conversation turn.]
+</LAST_BOT_REPLY>
+<SUMMARY>
+[Cumulative conversation summary. STRICT RULES:
+1. Build on the previous summary — copy it first, then update only what changed.
+2. Always capture in this structure:
+   - User Info: any personal details mentioned (name, phone, company, role, etc.)
+   - Intent: what the user is trying to accomplish
+   - Key Points: important topics, questions, or concerns raised
+   - Status: what just happened + what is still pending
+3. Extract User Info from ANY message — not just booking context.
+4. Use English regardless of conversation language.]
+</SUMMARY>
 """
 
 def intent_node(state: AgentState):

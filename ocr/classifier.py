@@ -43,26 +43,22 @@ CONFIDENCE_THRESHOLD = 70
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
 _PROMPT = """
-You are an expert laboratory prescription OCR system.
+You are an expert laboratory prescription OCR system specialized in reading printed and handwritten medical prescriptions.
 
-Your task is to analyze the uploaded image.
-STEP 1
--------
-Determine the document type.
+Your task is to analyze the uploaded prescription image with high medical precision.
 
-Possible values:
-- lab_prescription
-- medical_report
-- radiology_request
-- advertisement
-- invoice
-- blank
-- other
+STEP 1: Document Classification
+Determine the document_type:
+- "lab_prescription"
+- "medical_report"
+- "radiology_request"
+- "advertisement"
+- "invoice"
+- "blank"
+- "other"
 
-STEP 2
--------
-If it is NOT a laboratory prescription return:
-
+STEP 2: Non-Prescription Handling
+If document_type is NOT "lab_prescription", return:
 {
     "document_type": "...",
     "is_prescription": false,
@@ -71,71 +67,32 @@ If it is NOT a laboratory prescription return:
     "process_success": false,
     "labs": [],
     "unknown_items": [],
-    "notes": "Reason"
+    "notes": "Image is not a valid laboratory prescription."
 }
 
-STEP 3
--------
-If it IS a laboratory prescription:
+STEP 3: Laboratory Investigation Extraction
+If document_type IS "lab_prescription":
+- Extract ONLY laboratory tests/investigations.
+- Recognize common shorthand (e.g., "S. Ca", "Vit D", "S. PTH", "S. Mg", "S. Uric Acid", "CBC", "T3/T4/TSH", "HbA1c").
+- Ignore: doctor info, patient info, diagnosis, oral medications, dates, addresses, phone numbers.
+- Do NOT invent or guess tests.
+- Put illegible or ambiguous fragments into "unknown_items".
+- Deduplicate identical tests.
 
-Extract ONLY laboratory investigations.
-
-Ignore:
-- doctor name
-- patient name
-- age
-- gender
-- address
-- diagnosis
-- medications
-- signatures
-- dates
-- phone numbers
-
-Do NOT invent laboratory tests.
-
-If text is unreadable, put it inside unknown_items.
-
-Remove duplicate labs.
-
-CRITICAL ACCURACY RULES:
-- Only extract a lab test if you can actually see text in the image that
-  corresponds to it. Do NOT infer, guess, or add tests based on common
-  panels, typical bundles, or what "usually" goes together.
-- Every "matched_text" MUST be text that is genuinely visible in the image.
-  Never fabricate matched_text.
-- If handwriting or print is unclear, blurry, cropped, or ambiguous, do NOT
-  force a match to the closest-sounding test. Put the raw fragment in
-  unknown_items instead of guessing.
-- If two readings of the same handwriting are plausible, choose
-  unknown_items over a low-confidence guess in labs.
-- Remove duplicate labs (same test mentioned more than once).
-
-STEP 4
--------
-Each laboratory test must contain:
-
+STEP 4: Structure Extracted Labs
+Each extracted test item in "labs" must contain:
 {
-    "standardized_name": "",
-    "matched_text":      "",
-    "confidence":        95
+    "standardized_name": "Standard English/Medical Test Name",
+    "matched_text": "Exact raw text visible in image",
+    "confidence": 95
 }
 
-confidence is your confidence (0-100)
-that the extracted laboratory test is correct.
+STEP 5: Confidence Calculation
+- Calculate overall_confidence (0-100).
+- If overall_confidence >= 70  -> process_success = true
+- If overall_confidence <  70  -> process_success = false
 
-STEP 5
--------
-Return overall_confidence (0-100).
-
-This represents your confidence that
-the COMPLETE extraction is correct.
-
-Rules:
-- overall_confidence >= 70  →  process_success = true
-- overall_confidence <  70  →  process_success = false
--
-Return ONLY valid JSON. No markdown fences.
+Return ONLY valid JSON. No markdown backticks. No conversational text.
 """
 
 
@@ -187,7 +144,7 @@ def analyze_prescription(image_path: str) -> dict:
 
         start = time.time()
         response = gemini_client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model="gemini-3.5-flash-lite",
             contents=[img, _PROMPT],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json"
@@ -222,13 +179,6 @@ def analyze_prescription(image_path: str) -> dict:
     # ── Enforce threshold (server-side safety guard) ───────────────────────────
     overall_confidence = int(data.get("overall_confidence", 0))
     data["process_success"] = overall_confidence >= CONFIDENCE_THRESHOLD
-
-    if usage:
-        data["ocr_usage"] = {
-            "input_tokens": getattr(usage, "prompt_token_count", 0) or 0,
-            "output_tokens": getattr(usage, "candidates_token_count", 0) or 0,
-            "total_tokens": getattr(usage, "total_token_count", 0) or 0
-        }
 
     return data
 

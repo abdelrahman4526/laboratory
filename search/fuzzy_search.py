@@ -31,16 +31,9 @@ _faiss_metadata = None
 
 TABLE_BY_TYPE: dict[EntityType, str] = {
     EntityType.LAB: "labservices",
-
 }
 
-# rapid (fuzz.*) و ngram_similarity كلاهما بيرجعوا قيمة على مقياس 0-1،
-# فالـ final_score = (rapid + ngram) / 2 برضو بيبقى على مقياس 0-1.
-# لازم MIN_SCORE يكون على نفس المقياس (0-1)، مش 0-100، وإلا
-# final_score >= MIN_SCORE مستحيل يتحقق أبدًا وهيرجع نتائج فاضية دايمًا.
-MIN_SCORE = 0.55  # 0-1 scale
-_NGRAM_MIN, _NGRAM_MAX = 1, 3
-_CHAR_NGRAM_SIZE = 3
+MIN_SCORE = 0.45  # 0-1 scale, updated for short medical terms like T4, T3
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +53,7 @@ _cache_lock = Lock()
 
 
 # ---------------------------------------------------------------------------
-# Text normalization helpers
+# Fuzzy Search Logic with Aliases & Exact Token Matching
 # ---------------------------------------------------------------------------
 
 def fuzzy_search(
@@ -76,11 +69,6 @@ def fuzzy_search(
         return []
 
     results = []
-
-    # كان فيه هنا EntityType.BUNDLE اللي مش موجودة في الـ enum الحالي
-    # (اللي فيه بس EntityType.LAB) وده كان بيعمل AttributeError ويكسر
-    # كل الـ request. بنستخدم بدل كده مفاتيح TABLE_BY_TYPE نفسها، عشان
-    # لو ضفت نوع جديد فعلاً في المستقبل يتضاف تلقائي هنا من غير كراش.
     types_to_search = entity_types or list(TABLE_BY_TYPE.keys())
 
     with main_session() as session:
@@ -89,9 +77,10 @@ def fuzzy_search(
 
             table = TABLE_BY_TYPE[entity_type]
 
+            # Query name, alias_names, keywords, search_text from labservices
             rows = session.execute(
                 text(f"""
-                    SELECT id,name
+                    SELECT id, name, alias_names, keywords, search_text
                     FROM {table}
                 """)
             ).fetchall()
@@ -99,39 +88,56 @@ def fuzzy_search(
             scored = []
 
             for row in rows:
+                candidates = [row.name or ""]
+                
+                # Add aliases, keywords, and search_text to candidate search texts
+                if hasattr(row, 'alias_names') and row.alias_names:
+                    candidates.append(str(row.alias_names))
+                if hasattr(row, 'keywords') and row.keywords:
+                    candidates.append(str(row.keywords))
+                if hasattr(row, 'search_text') and row.search_text:
+                    candidates.append(str(row.search_text))
+                if aliases:
+                    candidates.extend([str(a) for a in aliases if a])
 
-                normalized_name = normalize(row.name)
+                max_final_score = 0.0
 
-                rapid = max(
-                    fuzz.partial_ratio(normalized_query, normalized_name),
-                    fuzz.token_set_ratio(normalized_query, normalized_name),
-                ) / 100
+                for cand in candidates:
+                    normalized_cand = normalize(cand)
+                    if not normalized_cand:
+                        continue
 
-                ngram = ngram_similarity(
-                    normalized_query,
-                    normalized_name,
-                )
+                    # Exact word/token match (vital for short medical terms like T4, T3, TSH, PTH, CBC)
+                    query_words = set(re.findall(r'\b\w+\b', normalized_query.lower()))
+                    cand_words = set(re.findall(r'\b\w+\b', normalized_cand.lower()))
 
-                final_score = (rapid + ngram) / 2
+                    if query_words and query_words.issubset(cand_words):
+                        final_score = 1.0
+                    else:
+                        rapid = max(
+                            fuzz.partial_ratio(normalized_query, normalized_cand),
+                            fuzz.token_set_ratio(normalized_query, normalized_cand),
+                        ) / 100
 
-                if final_score >= MIN_SCORE:
-
-                    scored.append(
-                        (
-                            row,
-                            rapid,
-                            ngram,
-                            final_score,
+                        ngram = ngram_similarity(
+                            normalized_query,
+                            normalized_cand,
                         )
-                    )
+
+                        final_score = (rapid + ngram) / 2
+
+                    if final_score > max_final_score:
+                        max_final_score = final_score
+
+                if max_final_score >= MIN_SCORE:
+                    scored.append((row, max_final_score))
 
             scored.sort(
-                key=lambda x: x[3],
+                key=lambda x: x[1],
                 reverse=True,
             )
 
-            for row, rapid, ngram, final_score in scored[:limit]:
-
+            for row, final_score in scored[:limit]:
                 results.append(
                     SearchResult(
                         id=row.id,
@@ -147,6 +153,4 @@ def fuzzy_search(
         reverse=True,
     )
 
-
-    
     return results[:limit]

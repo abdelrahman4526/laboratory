@@ -1,55 +1,107 @@
 {% extends 'base.html' %}
-{% block title %}الحجوزات{% endblock %}
-{% block topbar_title %}الحجوزات{% endblock %}
-{% block topbar_sub %}كل حجوزات المختبر{% endblock %}
+{% block title %}الحجوزات المنزلية{% endblock %}
+{% block topbar_title %}إدارة الحجوزات والزيارات المنزلية{% endblock %}
+{% block topbar_sub %}متابعة وطلب زيارات سحب العينات المنزلية وتأكيد المواعيد{% endblock %}
 
 {% block topbar_actions %}
   <a href="{{ url_for('create_booking') }}" class="btn btn-primary">
-    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-      <path d="M12 5v14M5 12h14"/>
-    </svg>
-    حجز جديد
+    <i data-lucide="plus" style="width:16px;height:16px;"></i>
+    حجز زيارة جديدة
   </a>
 {% endblock %}
 
 {% block content %}
 
-<!-- Stats -->
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-label">إجمالي الحجوزات</div>
-    <div class="stat-value si-blue">{{ stats.total }}</div>
+<!-- ── STATS ROW ───────────────────────────────────────────── -->
+<div class="stats-grid mb-4" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+  
+  <div class="card" style="padding: 1.25rem; display: flex; align-items: center; justify-content: space-between; border-radius: var(--radius-md);">
+    <div>
+      <span class="text-muted" style="font-size: 0.85rem; font-weight: 500;">إجمالي الحجوزات</span>
+      <div style="font-size: 1.75rem; font-weight: 800; color: var(--text-primary); margin-top: 0.25rem;">
+        {{ stats.total }}
+      </div>
+    </div>
+    <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(99, 102, 241, 0.12); color: var(--primary); display: flex; align-items: center; justify-content: center;">
+      <i data-lucide="calendar-check" style="width: 22px; height: 22px;"></i>
+    </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-label">قيد الانتظار</div>
-    <div class="stat-value si-amber">{{ stats.pending }}</div>
+
+  <div class="card" style="padding: 1.25rem; display: flex; align-items: center; justify-content: space-between; border-radius: var(--radius-md);">
+    <div>
+      <span class="text-muted" style="font-size: 0.85rem; font-weight: 500;">قيد الانتظار</span>
+      <div style="font-size: 1.75rem; font-weight: 800; color: #f59e0b; margin-top: 0.25rem;">
+        {{ stats.pending }}
+      </div>
+    </div>
+    <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(245, 158, 11, 0.12); color: #f59e0b; display: flex; align-items: center; justify-content: center;">
+      <i data-lucide="clock" style="width: 22px; height: 22px;"></i>
+    </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-label">تم الحضور</div>
-    <div class="stat-value si-green">{{ stats.attended }}</div>
+
+  <div class="card" style="padding: 1.25rem; display: flex; align-items: center; justify-content: space-between; border-radius: var(--radius-md);">
+    <div>
+      <span class="text-muted" style="font-size: 0.85rem; font-weight: 500;">تمت الزيارة / حضور</span>
+      <div style="font-size: 1.75rem; font-weight: 800; color: #10b981; margin-top: 0.25rem;">
+        {{ stats.done }}
+      </div>
+    </div>
+    <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(16, 185, 129, 0.12); color: #10b981; display: flex; align-items: center; justify-content: center;">
+      <i data-lucide="check-circle-2" style="width: 22px; height: 22px;"></i>
+    </div>
   </div>
-  <div class="stat-card">
-    <div class="stat-label">لم يحضر</div>
-    <div class="stat-value si-red">{{ stats.no_show }}</div>
+
+  <div class="card" style="padding: 1.25rem; display: flex; align-items: center; justify-content: space-between; border-radius: var(--radius-md);">
+    <div>
+      <span class="text-muted" style="font-size: 0.85rem; font-weight: 500;">لم يحضر / ملغى</span>
+      <div style="font-size: 1.75rem; font-weight: 800; color: #ef4444; margin-top: 0.25rem;">
+        {{ stats.no_show }}
+      </div>
+    </div>
+    <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(239, 68, 68, 0.12); color: #ef4444; display: flex; align-items: center; justify-content: center;">
+      <i data-lucide="x-circle" style="width: 22px; height: 22px;"></i>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── HERO HEADER CARD ────────────────────────────────────── -->
+<div class="card mb-4" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: #ffffff; padding: 1.75rem; border-radius: var(--radius-lg); border: 1px solid rgba(99, 102, 241, 0.3); margin-bottom: 1.75rem; box-shadow: var(--shadow-md);">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+    <div>
+      <span style="display: inline-flex; align-items: center; gap: 6px; background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.75rem;">
+        <i data-lucide="truck" style="width: 14px; height: 14px;"></i> خدمة السحب المنزلي المباشر
+      </span>
+      <h2 style="font-size: 1.6rem; font-weight: 800; margin-bottom: 0.5rem; color: #ffffff;">جدول زيارات سحب العينات المنزلية</h2>
+      <p style="font-size: 0.95rem; opacity: 0.85; max-width: 680px; line-height: 1.6; margin: 0;">
+        متابعة وتأكيد طلبات الزيارات المنزلية لسحب عينات التحاليل، تحديث حالة الحجز فورياً، وإرسال التذاكر وتأكيد المواعيد للعملاء عبر الفيسبوك أو الاتصال المباشر.
+      </p>
+    </div>
+
+    <div style="display: flex; gap: 0.6rem; align-items: center;">
+      <a href="{{ url_for('create_booking') }}" class="btn btn-primary">
+        <i data-lucide="plus-circle" style="width: 15px; height: 15px;"></i>
+        إضافة حجز جديد
+      </a>
+    </div>
   </div>
 </div>
 
-<!-- Toolbar -->
-<div class="toolbar">
-  <form method="GET" action="{{ url_for('list_bookings') }}" class="toolbar-left">
-    <div class="search-box">
-      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-      </svg>
+<!-- ── SEARCH & FILTER TOOLBAR ─────────────────────────────── -->
+<div class="toolbar" style="margin-bottom: 1.25rem;">
+  <form method="GET" action="{{ url_for('list_bookings') }}" class="toolbar-filters" style="width: 100%; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+    <div class="search-box" style="flex: 1; min-width: 250px;">
+      <i data-lucide="search" style="width: 16px; height: 16px;"></i>
       <input
         type="text"
         name="search"
-        placeholder="بحث بالاسم أو رقم الهاتف أو المرجع..."
+        placeholder="ابحث باسم المريض، رقم الهاتف، أو المرجع (#)..."
         value="{{ search or '' }}"
         class="search-input"
       >
     </div>
-    <select name="status" class="form-control" style="width:auto;">
+
+    <select name="status" class="form-control" style="width: 180px; font-weight: 600;">
       <option value="">كل الحالات</option>
       {% for s in all_statuses %}
         <option value="{{ s.value }}" {% if status_filter == s.value %}selected{% endif %}>
@@ -57,109 +109,135 @@
         </option>
       {% endfor %}
     </select>
-    <button type="submit" class="btn btn-ghost">بحث</button>
+
+    <button type="submit" class="btn btn-primary">تطبيق الفلترة</button>
     {% if search or status_filter %}
-      <a href="{{ url_for('list_bookings') }}" class="btn btn-ghost">مسح</a>
+      <a href="{{ url_for('list_bookings') }}" class="btn btn-ghost">مسح الفلتر</a>
     {% endif %}
   </form>
 </div>
 
-<!-- Table -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">قائمة الحجوزات المنزليه</span>
-    <span class="text-muted" style="font-size:.85rem;">{{ pagination.total }} حجز</span>
-  </div>
-  <div class="table-wrapper">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>المرجع</th>
-          <th>الاسم</th>
-          <th>رقم الهاتف</th>
-          <th>التاريخ</th>
-          <th>العنوان</th>
-          <th>المصدر</th>
-          <th>الحالة</th>
-          <th>الإجراءات</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for booking in bookings %}
-        <tr>
-          <td>
-            <code style="
-              background:rgba(99,102,241,.1);
-              color:#818cf8;
-              padding:.2rem .5rem;
-              border-radius:4px;
-              font-size:.85rem;
-            ">#{{ booking.reference_id }}</code>
-          </td>
-          <td><strong>{{ booking.name }}</strong></td>
-          <td>{{ booking.phone_number }}</td>
-          <td class="text-muted">{{ booking.date or '—' }}</td>
-          <td class="text-muted">{{ booking.address or '—' }}</td>
-          <td class="text-muted">{{ booking.comes_from or '—' }}</td>
-          <td>
-            <form method="POST" action="{{ url_for('update_booking_status', visit_id=booking.id) }}">
-              <select
-                name="status"
-                class="status-select status-{{ booking.status.value | lower | replace(' ', '-') }}"
-                onchange="this.form.submit()"
-              >
-                {% for s in all_statuses %}
-                  <option value="{{ s.value }}" {% if booking.status == s %}selected{% endif %}>
-                    {{ s.value }}
-                  </option>
-                {% endfor %}
-              </select>
-            </form>
-          </td>
-          <td>
-            <div style="display:flex;gap:.5rem;">
-              <a href="{{ url_for('view_booking', visit_id=booking.id) }}" class="btn btn-ghost btn-sm">عرض</a>
-              <a href="{{ url_for('edit_booking', visit_id=booking.id) }}" class="btn btn-ghost btn-sm">تعديل</a>
-              <form method="POST" action="{{ url_for('delete_booking', visit_id=booking.id) }}"
-                    onsubmit="return confirm('هل أنت متأكد من حذف هذا الحجز؟')">
-                <button type="submit" class="btn btn-danger btn-sm">حذف</button>
-              </form>
-            </div>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="8" style="text-align:center;padding:3rem;color:var(--text-muted);">
-            {% if search or status_filter %}
-              لا توجد حجوزات تطابق البحث
-            {% else %}
-              لا توجد حجوزات بعد — <a href="{{ url_for('create_booking') }}" style="color:var(--primary);">أضف أول حجز</a>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <!-- Pagination -->
-  {% if pagination.pages > 1 %}
-  <div class="pagination">
-    {% if pagination.has_prev %}
-      <a href="{{ url_for('list_bookings', page=pagination.prev_num, search=search, status=status_filter) }}" class="btn btn-ghost btn-sm">السابق</a>
+<!-- ── BOOKINGS CARDS GRID ─────────────────────────────────── -->
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.25rem;">
+  {% for visit in bookings %}
+  <div class="card" style="padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between; border-radius: var(--radius-md); border: 1px solid var(--surface-border); transition: var(--transition);">
+    <div>
+      <!-- Card Top Info -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <code style="background: rgba(99, 102, 241, 0.12); color: #818cf8; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 0.85rem;">
+          #{{ visit.reference_id }}
+        </code>
+
+        <form method="POST" action="{{ url_for('update_booking_status', visit_id=visit.id) }}">
+          <select
+            name="status"
+            class="status-select status-{{ visit.status.value | lower | replace(' ', '-') }}"
+            style="font-size: 0.8rem; font-weight: 700; padding: 4px 8px; border-radius: 20px; cursor: pointer;"
+            onchange="this.form.submit()"
+          >
+            {% for s in all_statuses %}
+              <option value="{{ s.value }}" {% if visit.status == s %}selected{% endif %}>
+                {{ s.value }}
+              </option>
+            {% endfor %}
+          </select>
+        </form>
+      </div>
+
+      <!-- Patient Name -->
+      <h3 style="font-size: 1.2rem; font-weight: 700; color: var(--text-primary); margin-bottom: 1rem;">
+        {{ visit.name }}
+      </h3>
+
+      <!-- Details List -->
+      <div style="display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.25rem; font-size: 0.88rem; color: var(--text-secondary);">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="phone" style="width: 15px; height: 15px; color: var(--primary);"></i>
+          <span>الهاتف: <strong style="color: var(--text-primary); font-family: monospace;">{{ visit.phone_number }}</strong></span>
+        </div>
+
+        <div style="display: flex; align-items: flex-start; gap: 8px;">
+          <i data-lucide="map-pin" style="width: 15px; height: 15px; color: #10b981; margin-top: 3px;"></i>
+          <span>العنوان: <strong style="color: var(--text-primary);">{{ visit.address or 'غير محدد' }}</strong></span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="calendar" style="width: 15px; height: 15px; color: #f59e0b;"></i>
+          <span>الموعد المطلوب: <strong>{{ visit.date or 'غير محدد' }}</strong></span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="calendar" style="width: 15px; height: 15px; color: #f59e0b;"></i>
+          <span>وقت الحجز: <strong>{{ visit.time or 'غير محدد' }}</strong></span>
+        </div>
+
+        {% if visit.comes_from %}
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="share-2" style="width: 15px; height: 15px; color: #8b5cf6;"></i>
+          <span>المصدر: <span class="badge" style="background: rgba(139, 92, 246, 0.1); color: #8b5cf6; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;">{{ visit.comes_from }}</span></span>
+        </div>
+        {% endif %}
+
+        {% if visit.details %}
+        <div style="background: var(--page-bg); border-radius: 6px; padding: 10px; margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); border: 1px solid var(--surface-border);">
+          <strong>تفاصيل:</strong> {{ visit.details }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Card Actions -->
+    {% if visit.status.value == 'Confirmed' or visit.status.name == 'CONFIRMED' %}
+    <form method="POST" action="{{ url_for('confirm_booking', visit_id=visit.id) }}" style="margin-top: 0.5rem;" onsubmit="return confirm('هل تريد إرسال تفاصيل الزيارة والرسالة للعميل؟')">
+      <button type="submit" class="btn" style="width: 100%; justify-content: center; background: linear-gradient(135deg, #D49520 0%, #B87E14 100%); color: #ffffff; border: none; font-weight: 700; padding: 10px 14px; border-radius: 10px; box-shadow: 0 4px 14px rgba(212, 149, 32, 0.3); font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+        <i data-lucide="send" style="width: 16px; height: 16px;"></i>
+        تأكيد الحجز وإرسال رد للعميل 🚀
+      </button>
+    </form>
     {% endif %}
-    {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
-      {% if p %}
-        <a href="{{ url_for('list_bookings', page=p, search=search, status=status_filter) }}"
-           class="btn btn-sm {% if p == pagination.page %}btn-primary{% else %}btn-ghost{% endif %}">{{ p }}</a>
-      {% else %}
-        <span style="padding:.25rem .5rem;color:var(--text-muted);">…</span>
-      {% endif %}
-    {% endfor %}
-    {% if pagination.has_next %}
-      <a href="{{ url_for('list_bookings', page=pagination.next_num, search=search, status=status_filter) }}" class="btn btn-ghost btn-sm">التالي</a>
-    {% endif %}
+
+    <div style="display: flex; gap: 0.5rem; padding-top: 0.85rem; border-top: 1px solid var(--surface-border); margin-top: 0.85rem;">
+      <a href="{{ url_for('view_booking', visit_id=visit.id) }}" class="btn btn-ghost btn-sm" style="flex: 1; justify-content: center;">
+        <i data-lucide="eye" style="width: 14px; height: 14px;"></i> التفاصيل
+      </a>
+      <a href="{{ url_for('edit_booking', visit_id=visit.id) }}" class="btn btn-ghost btn-sm" style="flex: 1; justify-content: center;">
+        <i data-lucide="edit-2" style="width: 14px; height: 14px;"></i> تعديل
+      </a>
+      <form method="POST" action="{{ url_for('delete_booking', visit_id=visit.id) }}" style="flex: 1;" onsubmit="event.preventDefault(); confirmDelete(this);">
+        <button type="submit" class="btn btn-danger btn-sm" style="width: 100%; justify-content: center;">
+          <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i> حذف
+        </button>
+      </form>
+    </div>
   </div>
+  {% else %}
+  <div class="card" style="grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-muted);">
+    <i data-lucide="calendar-x" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.4;"></i>
+    <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">لا توجد حجوزات منزلية</h3>
+    <p style="font-size: 0.9rem; margin-bottom: 1.25rem;">لا توجد طلبات سحب منزلية تطابق البحث حالياً.</p>
+    <a href="{{ url_for('create_booking') }}" class="btn btn-primary">إضافة حجز زيارة جديدة</a>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── PAGINATION ─────────────────────────────────────────── -->
+{% if pagination and pagination.pages > 1 %}
+<div class="pagination" style="margin-top: 1.75rem; display: flex; justify-content: center; gap: 0.5rem;">
+  {% if pagination.has_prev %}
+    <a href="{{ url_for('list_bookings', page=pagination.prev_num, search=search, status=status_filter) }}" class="page-btn">→</a>
+  {% endif %}
+  {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+    {% if p %}
+      <a href="{{ url_for('list_bookings', page=p, search=search, status=status_filter) }}"
+         class="page-btn {% if p == pagination.page %}active{% endif %}">{{ p }}</a>
+    {% else %}
+      <span class="page-btn" style="opacity:.4">…</span>
+    {% endif %}
+  {% endfor %}
+  {% if pagination.has_next %}
+    <a href="{{ url_for('list_bookings', page=pagination.next_num, search=search, status=status_filter) }}" class="page-btn">←</a>
   {% endif %}
 </div>
+{% endif %}
 
 {% endblock %}

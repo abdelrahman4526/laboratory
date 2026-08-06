@@ -18,15 +18,16 @@ from flask_migrate import Migrate
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from dotenv import load_dotenv
 import threading
-
-from models.models import db, User, Laboratory, Page, LabService, Status
+from datetime  import datetime,timedelta ,timezone
+from models.models import db, User, Laboratory, Page, LabService, Status, Homevisit ,Branch
 
 from software_service.platform_services import PlatformService
 from software_service.page_services import PageService
-from graph.utils import parse_alias_names,parse_keywords
+from graph.utils import parse_alias_names,parse_keywords,generate_booking_pdf
 from platforms.facebook_handler import FacebookHandler
 from parsers.facebook import parse_facebook_message, parse_facebook_comment
 from knowledge.vector_store import ensure_vector_table
+from software_service.subscripition_service import SubscriptionService
 load_dotenv()
 
 # ── App & Config ──────────────────────────────────────────────────────────────
@@ -127,10 +128,33 @@ def logout():
 # ══════════════════════════════════════════════════════════════════════════
 
 # main dashboard page
+# main dashboard page
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    return render_template('dashboard.html')
+    laboratory = Laboratory.query.first()
+
+    subscription = None
+    subscription_status = None
+    usage_percentage = 0
+    remaining_messages = 0
+
+    if laboratory:
+        subscription = SubscriptionService.get_subscription_by_laboratory_id(
+            laboratory.id
+        )
+        if subscription:
+            subscription_status = SubscriptionService.get_status(subscription)
+            usage_percentage = SubscriptionService.usage_percentage(subscription)
+            remaining_messages = SubscriptionService.messages_remaining(subscription)
+
+    return render_template(
+        'dashboard.html',
+        subscription=subscription,
+        subscription_status=subscription_status,
+        usage_percentage=usage_percentage,
+        remaining_messages=remaining_messages,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -260,6 +284,113 @@ def delete_laboratory(lab_id):
     lab, msg = LaboratoryService.delete_laboratory(lab_id)
     flash(msg, 'success' if lab else 'error')
     return redirect(url_for('list_laboratories'))
+
+
+def get_default_laboratory():
+    laboratory = Laboratory.query.first()
+    if not laboratory:
+        laboratory = Laboratory(name='المعمل الرئيسي', info='')
+        db.session.add(laboratory)
+        db.session.commit()
+    return laboratory
+
+
+# list all branches
+@app.route('/branches')
+@login_required
+def list_branches():
+    page = request.args.get('page', 1, type=int)
+    search = request.args.get('search', '').strip() or None
+
+    query = Branch.query
+    if search:
+        query = query.filter(Branch.address.ilike(f"%{search}%"))
+
+    pagination = query.order_by(Branch.id.desc()).paginate(page=page, per_page=10, error_out=False)
+    branches_with_phone_count = Branch.query.filter(Branch.phone.isnot(None), Branch.phone != '').count()
+    laboratory = get_default_laboratory()
+
+    return render_template(
+        'branches/list.html',
+        laboratory=laboratory,
+        branches=pagination.items,
+        pagination=pagination,
+        search=search,
+        branches_with_phone_count=branches_with_phone_count,
+    )
+
+
+# create a new branch
+@app.route('/branches/new', methods=['GET', 'POST'])
+@login_required
+def create_branch():
+    if request.method == 'POST':
+        address = (request.form.get('address') or '').strip()
+        phone = (request.form.get('phone') or '').strip() or None
+        working_hours = (request.form.get('working_hours') or '').strip() or None
+
+        if not address:
+            flash('عنوان الفرع مطلوب.', 'error')
+            return render_template('branches/create.html')
+
+        laboratory = get_default_laboratory()
+
+        branch = Branch(
+            laboratory_id=laboratory.id,
+            address=address,
+            phone=phone,
+            working_hours=working_hours,
+        )
+        db.session.add(branch)
+        db.session.commit()
+
+        flash('تم إضافة الفرع بنجاح.', 'success')
+        return redirect(url_for('list_branches'))
+
+    return render_template('branches/create.html')
+
+
+# edit an existing branch
+@app.route('/branches/<int:branch_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_branch(branch_id):
+    branch = db.session.get(Branch, branch_id)
+    if not branch:
+        flash('الفرع غير موجود.', 'error')
+        return redirect(url_for('list_branches'))
+
+    if request.method == 'POST':
+        address = (request.form.get('address') or '').strip()
+        if not address:
+            flash('عنوان الفرع مطلوب.', 'error')
+            return render_template('branches/edit.html', branch=branch)
+
+        branch.address = address
+        branch.phone = (request.form.get('phone') or '').strip() or None
+        branch.working_hours = (request.form.get('working_hours') or '').strip() or None
+        db.session.commit()
+
+        flash('تم حفظ التعديلات بنجاح.', 'success')
+        return redirect(url_for('list_branches'))
+
+    return render_template('branches/edit.html', branch=branch)
+
+
+# delete a branch
+@app.route('/branches/<int:branch_id>/delete', methods=['POST'])
+@login_required
+def delete_branch(branch_id):
+    branch = db.session.get(Branch, branch_id)
+    if not branch:
+        flash('الفرع غير موجود.', 'error')
+        return redirect(url_for('list_branches'))
+
+    db.session.delete(branch)
+    db.session.commit()
+    flash('تم حذف الفرع بنجاح.', 'success')
+    return redirect(url_for('list_branches'))
+
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # Lab (formerly "Service") routes
@@ -500,7 +631,7 @@ def view_booking(visit_id):
     if not visit:
         flash(msg, 'error')
         return redirect(url_for('list_bookings'))
-    return render_template('bookings/detail.html', booking=visit, all_statuses=Status)
+    return render_template('bookings/detail.html', visit=visit, all_statuses=Status, Status=Status)
 
 
 # create a new manual booking
@@ -542,26 +673,122 @@ def edit_booking(visit_id):
             details=request.form.get('details') or None,
             address=request.form.get('address') or None,
         )
+
+        new_status = request.form.get('status')
+        if result.success and new_status:
+            status_result = homevisitService.update_status(visit_id, new_status)
+            if status_result.success:
+                updated_visit = status_result.visit
+                if updated_visit and updated_visit.comes_from and updated_visit.comes_from.startswith("Facebook:"):
+                    threading.Thread(
+                        target=notify_client_status_change,
+                        args=(visit_id,),
+                        daemon=True
+                    ).start()
+
         if result.success:
             flash(result.message, 'success')
             return redirect(url_for('list_bookings'))
         flash(result.message, 'error')
 
-    return render_template('bookings/edit.html', visit=visit)
+    return render_template('bookings/edit.html', visit=visit, all_statuses=Status)
 
 
+# send a fixed status-update message to the client on their original chat (Facebook only)
+def notify_client_status_change(visit_id):
+    with app.app_context():
+        try:
+            visit = db.session.get(Homevisit, visit_id)
+            if not visit:
+                return "not_found"
+
+            if not visit.comes_from or not visit.comes_from.startswith("Facebook:"):
+                return "local_only"  # المصدر مش فيسبوك، مفيش شات نبعتله عليه
+
+            _, sender_id, page_id = visit.comes_from.split(":", 2)
+
+            page = Page.query.filter_by(page_id=page_id).first()
+            if not page:
+                return "page_not_found"
+
+            handler = FacebookHandler(page)
+            static_message = (
+                "تم تحديث حالة حجزك ✅\n"
+                f"رقم الطلب: *{visit.reference_id}*\n"
+                "لأي استفسار، تواصل معانا."
+            )
+            handler.send(sender_id, static_message)
+
+            # لو الحالة الجديدة "تم الحضور"، ابعت الـPDF بتاع التذكرة كمان
+            print(f"[PDF DEBUG] visit_id={visit_id} | status={visit.status!r} | is_conformed={visit.status == Status.CONFIRMED}")
+            if visit.status == Status.CONFIRMED:
+                try:
+                    pdf_bytes = generate_booking_pdf(
+                        name=visit.name,
+                        phone=visit.phone_number,
+                        date=visit.date,
+                        details=visit.details,
+                        reference_id=visit.reference_id,
+                        address=visit.address,
+                        time=visit.time,
+                        
+                    )
+                    print(f"[PDF DEBUG] generate_booking_pdf returned type={type(pdf_bytes)} | len={len(pdf_bytes) if pdf_bytes else 0}")
+                    if pdf_bytes:
+                        resp = handler.send_file(
+                            recipient_id=sender_id,
+                            file_bytes=pdf_bytes,
+                            filename="booking_ticket.pdf",
+                        )
+                        print(f"[PDF DEBUG] send_file response: {resp.status_code if resp is not None else 'None'} | {resp.text if resp is not None else ''}")
+                    else:
+                        print("[PDF DEBUG] pdf_bytes is empty/None, send_file NOT called")
+                except Exception as e:
+                    import traceback
+                    print("[PDF DEBUG] EXCEPTION while generating/sending PDF:")
+                    print(traceback.format_exc())
+                    logging.getLogger(__name__).error(
+                        "[notify_client_status_change] PDF send failed for visit_id=%s: %s", visit_id, e
+                    )
+
+            return "sent"
+        except Exception as e:
+            import traceback
+            print("STATUS NOTIFY ERROR:")
+            print(traceback.format_exc())
+            return "error"
+        finally:
+            db.session.remove()
 # update a booking's status (supports both form post and AJAX/json)
 @app.route('/bookings/<int:visit_id>/status', methods=['POST'])
 @login_required
 def update_booking_status(visit_id):
     new_status = request.form.get('status') or (request.json.get('status') if request.is_json else None)
     result = homevisitService.update_status(visit_id, new_status)
+
+    notify_msg = None
+    if result.success:
+        visit = result.visit
+        if visit and visit.comes_from and visit.comes_from.startswith("Facebook:"):
+            threading.Thread(
+                target=notify_client_status_change,
+                args=(visit_id,),
+                daemon=True
+            ).start()
+        else:
+            notify_msg = "تم تأكيد الحجز وحفظ البيانات محلياً (المصدر ليس Facebook)."
+
     if request.is_json:
-        return jsonify(success=result.success, message=result.message)
+        return jsonify(
+            success=result.success,
+            message=result.message,
+            notify=notify_msg,
+        )
+
     flash(result.message, 'success' if result.success else 'error')
+    if notify_msg:
+        flash(notify_msg, 'info')
     return redirect(url_for('list_bookings'))
-
-
 # delete a booking
 @app.route('/bookings/<int:visit_id>/delete', methods=['POST'])
 @login_required
@@ -570,6 +797,72 @@ def delete_booking(visit_id):
     flash(result.message, 'success' if result.success else 'error')
     return redirect(url_for('list_bookings'))
 
+
+# doctor/admin confirms the booking from the dashboard; replies to the client (via Facebook if applicable)
+@app.route('/bookings/<int:visit_id>/confirm', methods=['POST'])
+@login_required
+def confirm_booking(visit_id):
+    visit, msg = homevisitService.get_visit_by_id(visit_id)
+    if not visit:
+        flash(msg, 'error')
+        return redirect(url_for('list_bookings'))
+
+    # رسالة التأكيد النهائية اللي هتتبعت للعميل
+    message_lines = [
+        "تم تأكيد حجز الزيارة المنزلية الخاصة بك ويرجي التاكد من المعاد ✅",
+        f"الاسم: {visit.name}",
+        f"العنوان: {visit.address}",
+    ]
+    if visit.date:
+        message_lines.append(f"اليوم: {visit.date}")
+    if visit.details:
+        message_lines.append(f"تفاصيل: {visit.details}")
+    if visit.time:
+        message_lines.append(f"الساعه: {visit.time}" )   
+    message_lines.append("شكراً لتعاملك معنا.")
+    reply_text = "\n".join(message_lines)
+
+    comes_from = visit.comes_from or ""
+    if not comes_from.startswith("Facebook:"):
+        visit.status = Status.CONFIRMED
+        db.session.commit()
+        flash('تم تأكيد الحجز وحفظ البيانات محلياً (المصدر ليس Facebook).', 'success')
+        return redirect(url_for('list_bookings'))
+
+    parts = comes_from.split(":")
+    sender_id = parts[1]
+    page_id = parts[2]
+
+    page = Page.query.filter_by(page_id=page_id).first()
+    if not page:
+        flash('الصفحة المرتبطة بهذا الحجز غير موجودة.', 'error')
+        return redirect(url_for('list_bookings'))
+
+    try:
+        handler = FacebookHandler(page)
+        handler.send(sender_id, reply_text)
+
+        ClientService.update_client_summary_and_last_bot_message(
+            sender_id=sender_id,
+            page_id=page_id,
+            platform_id=2,
+            summary=f"Admin confirmed home visit booking for {visit.name} on {visit.date}.",
+            last_bot_message=reply_text
+        )
+
+        visit.status = Status.CONFIRMED
+        db.session.commit()
+
+        flash('تم تأكيد الحجز وإرسال الرسالة للعميل بنجاح.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'حدث خطأ أثناء إرسال الرد: {str(e)}', 'error')
+
+    return redirect(url_for('list_bookings'))
+
+
+
+# doctor/admin confirms the booking from the dashboard; replies to the client (via Facebook if applicable)
 
 # ══════════════════════════════════════════════════════════════════════════
 # Inquiry (prescription) routes
@@ -663,7 +956,7 @@ def confirm_inquiry(inquiry_id):
     comes_from = inquiry.comes_from or ""
     if not comes_from.startswith("Facebook:"):
         inquiry.services_mentioned = ", ".join(service_names)
-        inquiry.status = Status.REVIEWED
+        inquiry.status = Status.DONE
         db.session.commit()
         flash('تمت المراجعة وحفظ البيانات محلياً (المصدر ليس Facebook).', 'success')
         return redirect(url_for('inquiry_detail', inquiry_id=inquiry_id))
@@ -690,7 +983,7 @@ def confirm_inquiry(inquiry_id):
         )
 
         inquiry.services_mentioned = ", ".join(service_names)
-        inquiry.status = Status.REVIEWED
+        inquiry.status = Status.DONE
         db.session.commit()
 
         flash('تم تأكيد الروشتة وإرسالها للمستخدم بنجاح.', 'success')
@@ -924,6 +1217,158 @@ def edit_platform(platform_id):
         flash(msg, 'error')
 
     return render_template('platforms/edit.html', platform=platform)
+
+@app.route("/admin/dashbaord")
+@login_required
+def admin_subscription():
+
+    laboratory = Laboratory.query.first()
+
+    if not laboratory:
+        flash("No laboratory found.", "error")
+        return redirect(url_for("dashboard"))
+
+    subscription = SubscriptionService.get_subscription_by_laboratory_id(
+        laboratory.id
+    )
+
+    if not subscription:
+        flash("Subscription not found.", "error")
+        return redirect(url_for("dashboard"))
+
+    return render_template(
+        "subscription.html",
+        subscription=subscription,
+        status=SubscriptionService.get_status(subscription),
+        alert=SubscriptionService.get_alert(subscription),
+        remaining=SubscriptionService.messages_remaining(subscription),
+        usage=SubscriptionService.usage_percentage(subscription),
+    )
+
+
+@app.route("/admin/subscription/renew", methods=["POST"])
+@login_required
+def renew_subscription():
+
+    laboratory = Laboratory.query.first()
+
+    subscription = SubscriptionService.get_subscription_by_laboratory_id(
+        laboratory.id
+    )
+
+    months = int(request.form.get("months", 1))
+
+    SubscriptionService.renew(
+        subscription,
+        months=months,
+         )
+    flash("Subscription renewed successfully.", "success")
+    return redirect(url_for("admin_subscription"))
+
+
+@app.route("/admin/subscription/reset", methods=["POST"])
+@login_required
+def reset_subscription_usage():
+
+    laboratory = Laboratory.query.first()
+
+    subscription = SubscriptionService.get_subscription_by_laboratory_id(
+        laboratory.id
+    )
+
+    subscription.message_used = 0
+    subscription.updated_at = datetime.now(timezone.utc)
+
+    db.session.commit()
+
+    flash("Usage reset successfully.", "success")
+
+    return redirect(url_for("admin_subscription"))
+
+
+@app.route("/admin/subscription/suspend", methods=["POST"])
+@login_required
+def suspend_subscription():
+
+    laboratory = Laboratory.query.first()
+
+    subscription = SubscriptionService.get_subscription_by_laboratory_id(
+        laboratory.id
+    )
+
+    SubscriptionService.suspend(subscription)
+
+    flash("Subscription suspended.", "warning")
+
+    return redirect(url_for("admin_subscription"))
+
+
+@app.route("/admin/subscription/activate", methods=["POST"])
+@login_required
+def activate_subscription():
+
+    laboratory = Laboratory.query.first()
+
+    subscription = SubscriptionService.get_subscription_by_laboratory_id(
+        laboratory.id
+    )
+
+    SubscriptionService.activate(subscription)
+
+    flash("Subscription activated.", "success")
+
+    return redirect(url_for("admin_subscription"))  
+
+@app.route("/admin/subscription/update-limit", methods=["POST"])
+@login_required
+def update_subscription_limit():
+
+    laboratory = Laboratory.query.first()
+
+    subscription = SubscriptionService.get_subscription_by_laboratory_id(
+        laboratory.id
+    )
+
+    try:
+        new_limit = int(request.form["new_limit"])
+
+        SubscriptionService.update_limit(
+            subscription,
+            new_limit,
+        )
+
+        flash("Message limit updated successfully.", "success")
+
+    except ValueError:
+        flash("Invalid message limit.", "error")
+
+    return redirect(url_for("admin_subscription"))
+
+@app.route("/admin/subscription/update-grace", methods=["POST"])
+@login_required
+def update_subscription_grace():
+
+    laboratory = Laboratory.query.first()
+
+    subscription = SubscriptionService.get_subscription_by_laboratory_id(
+        laboratory.id
+    )
+
+    try:
+        new_grace = int(request.form["new_grace"])
+
+        SubscriptionService.update_grace_limit(
+            subscription,
+            new_grace,
+        )
+
+        flash("Grace limit updated successfully.", "success")
+
+    except ValueError:
+        flash("Invalid grace limit.", "error")
+
+    return redirect(url_for("admin_subscription"))
+
 
 
 # ══════════════════════════════════════════════════════════════════════════

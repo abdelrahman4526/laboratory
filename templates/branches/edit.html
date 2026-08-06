@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}تعديل بيانات الفرع{% endblock %}
+{% block topbar_title %}تعديل الفرع{% endblock %}
+{% block topbar_sub %}{{ branch.address }}{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:720px;margin:0 auto;padding:1.75rem;border-radius:var(--radius-lg);">
+  <div class="card-header" style="padding-bottom:1rem;margin-bottom:1.5rem;border-bottom:1px solid var(--surface-border);">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,0.12);color:var(--primary);display:flex;align-items:center;justify-content:center;">
+        <i data-lucide="edit-3" style="width:20px;height:20px;"></i>
+      </div>
+      <div>
+        <h3 class="card-title" style="font-size:1.2rem;font-weight:700;margin:0;">تعديل بيانات الفرع #{{ branch.id }}</h3>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin:2px 0 0 0;">تحديث العنوان أو رقم الهاتف أو مواعيد العمل</p>
+      </div>
+    </div>
+  </div>
+
+  <form action="{{ url_for('edit_branch', branch_id=branch.id) }}" method="POST">
+    <div style="display:grid;grid-template-columns:1fr;gap:20px;">
+
+      <!-- عنوان الفرع -->
+      <div class="form-group">
+        <label class="form-label" style="font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+          <i data-lucide="map-pin" style="width:16px;height:16px;color:var(--primary);"></i>
+          عنوان الفرع التفصيلي <span style="color:#ef4444;">*</span>
+        </label>
+        <input
+          type="text"
+          name="address"
+          class="form-control"
+          required
+          value="{{ request.form.get('address', branch.address) }}"
+        >
+      </div>
+
+      <!-- رقم الهاتف -->
+      <div class="form-group">
+        <label class="form-label" style="font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+          <i data-lucide="phone" style="width:16px;height:16px;color:var(--primary);"></i>
+          رقم هاتف الفرع
+        </label>
+        <input
+          type="text"
+          name="phone"
+          class="form-control"
+          value="{{ request.form.get('phone', branch.phone or '') }}"
+        >
+      </div>
+
+      <!-- مواعيد العمل -->
+      <div class="form-group">
+        <label class="form-label" style="font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+          <i data-lucide="clock" style="width:16px;height:16px;color:var(--primary);"></i>
+          مواعيد وساعات العمل
+        </label>
+        <input
+          type="text"
+          name="working_hours"
+          class="form-control"
+          value="{{ request.form.get('working_hours', branch.working_hours or '') }}"
+        >
+      </div>
+
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}" style="margin-top:20px;">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <div class="form-actions" style="margin-top:28px;display:flex;gap:12px;justify-content:flex-end;border-top:1px solid var(--surface-border);padding-top:1.25rem;">
+      <button type="submit" class="btn btn-primary btn-lg">
+        <i data-lucide="save" style="width:18px;height:18px;"></i>
+        حفظ التعديلات
+      </button>
+      <a href="{{ url_for('list_branches') }}" class="btn btn-ghost btn-lg">إلغاء وتراجع</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

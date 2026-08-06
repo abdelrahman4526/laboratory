@@ -68,6 +68,42 @@ def _calc_total_usage(result: dict, ocr_usage: dict = None) -> dict:
     }
 
 
+def _consume_subscription(message: "IncomingMessage", usage: dict) -> None:
+    """
+    Deducts one message + the real estimated cost from the laboratory's
+    subscription, based on the page this message came in on.
+    Silently no-ops if the page/subscription can't be resolved, so a
+    billing lookup failure never breaks the reply to the user.
+    """
+    from software_service.subscripition_service import SubscriptionService
+    from models.models import Page
+
+    try:
+        page = Page.query.filter_by(
+            page_id=message.page_id,
+            platform_id=message.platform_id,
+        ).first()
+
+        if not page:
+            print(f"[_consume_subscription] No page found for page_id={message.page_id} platform_id={message.platform_id}")
+            return
+
+        subscription = SubscriptionService.get_by_page(page)
+
+        if not subscription:
+            print(f"[_consume_subscription] No subscription found for laboratory_id={page.laboratory_id}")
+            return
+
+        SubscriptionService.consume(
+            subscription,
+            cost=usage["total_cost_usd"],
+        )
+
+    except Exception as e:
+        print(f"[_consume_subscription] Error: {e}")
+
+
+
 def run_agent(message: IncomingMessage, ocr_usage: dict = None) -> tuple[str, bytes | None]:
     client = ClientService.get_or_create_client(
         message.sender_id, message.page_id, message.platform_id
@@ -91,7 +127,7 @@ def run_agent(message: IncomingMessage, ocr_usage: dict = None) -> tuple[str, by
         "complaint_usage":   None,
         "direct_usage":      None,   
         "inquiry_usage":     None,
-        "booking_saved":     None,
+        "visit_saved":     None,
         "complaint_saved":   None,
         "inquiry_saved":     None,
     }
@@ -112,6 +148,7 @@ def run_agent(message: IncomingMessage, ocr_usage: dict = None) -> tuple[str, by
         return "Sorry, something went wrong. Please try again in a moment.", None
 
     usage = _calc_total_usage(result, ocr_usage=ocr_usage)
+    _consume_subscription(message, usage)
 
     logger.info(
         "[run_agent] metrics | sender_id=%s | platform=%s | intent=%s",

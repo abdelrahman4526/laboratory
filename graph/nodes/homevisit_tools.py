@@ -10,7 +10,9 @@ def save_visit_tool(
     date: str,
     details: str,
     address: str,
+    time: str,
     comes_from: str = "unknown",
+    
 ) -> homevisitResult:
     """
     Save a confirmed appointment booking to the database.
@@ -25,5 +27,6 @@ def save_visit_tool(
         date=date,
         details=details,
         address= address,
-        comes_from=platform_name,
+        comes_from=comes_from,
+        time= time,
     )

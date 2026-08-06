@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}المختبر — لوحة التحكم{% endblock %}</title>
+  <title>{% block title %}معامل الدكتور بديوي — لوحة التحكم{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
@@ -24,10 +24,10 @@
 <aside class="sidebar" id="sidebar">
 
   <div class="sidebar-header">
-    <div class="brand-badge">
-      <i data-lucide="flask-conical" class="brand-icon"></i>
-      <div>
-        <div class="lab-name">مختبر الإسكندرية</div>
+    <div class="brand-badge brand-logo-badge">
+      <img src="{{ url_for('static', filename='img/badiwi_logo.jpg') }}" alt="معامل الدكتور بديوي" class="brand-logo-img">
+      <div class="brand-text-container">
+        <div class="lab-name">معامل د. بديوي</div>
         <div class="lab-sub">نظام الأتمتة الطبي الذكي</div>
       </div>
     </div>
@@ -172,7 +172,7 @@
 
   <!-- Footer -->
   <footer class="site-footer">
-    <span>نظام المختبر الطبي الذكي &copy; {{ 2026 }}</span>
+    <span>مجموعة معامل الدكتور بديوي &copy; {{ 2026 }}</span>
     <span class="footer-divider">•</span>
     <span>تطوير <a href="https://revyai.tech" target="_blank" rel="noopener">RevyAI</a> (<a href="https://wa.me/201554019172" target="_blank" rel="noopener" style="color:#25d366;font-weight:700;">01554019172</a>)</span>
   </footer>

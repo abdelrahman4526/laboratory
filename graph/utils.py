@@ -1,8 +1,9 @@
 import re
 import io
 import os
+import unicodedata
 from datetime import datetime, timezone
-
+from reportlab.platypus import Image
 import arabic_reshaper
 from bidi.algorithm import get_display
 from reportlab.lib import colors
@@ -18,21 +19,33 @@ from reportlab.platypus import (
 
 from models.models import RequestCounter,db
 
+import ast
+from datetime import datetime, timezone
+import io
+import json
+import os
+import re
+
+from knowledge.schemas import AliasNames
+
+from models.models import RequestCounter, db
+
+
 def strip_tags(text: str) -> str:
     """Remove all XML-style tags injected by LLM prompts from a reply string."""
-    text = re.sub(r"<SUMMARY>.*?</SUMMARY>",                   "", text, flags=re.DOTALL)
-    text = re.sub(r"<INTENT>.*?</INTENT>",                     "", text, flags=re.DOTALL)
-    text = re.sub(r"<LAST_BOT_MESSAGE>.*?</LAST_BOT_MESSAGE>", "", text, flags=re.DOTALL)
-    text = re.sub(r"<[^>]+>",                                  "", text)
+    text = re.sub(r"<SUMMARY>.*?</SUMMARY>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<INTENT>.*?</INTENT>", "", text, flags=re.DOTALL)
+    text = re.sub(
+        r"<LAST_BOT_MESSAGE>.*?</LAST_BOT_MESSAGE>", "", text, flags=re.DOTALL
+    )
+    text = re.sub(r"<[^>]+>", "", text)
     return text.strip()
 
 
-def detect_language_fallback(user_message: str, arabic: str, default: str) -> str:
-    """
-    Return `arabic` if the user message contains Arabic characters,
-    otherwise return `default`.
-    Used for error/fallback messages in nodes that must match user language.
-    """
+def detect_language_fallback(
+    user_message: str, arabic: str, default: str
+) -> str:
+    """Return `arabic` if the user message contains Arabic characters, otherwise return `default`."""
     if any("\u0600" <= c <= "\u06ff" for c in user_message):
         return arabic
     return default
@@ -42,6 +55,7 @@ PLATFORM_MAP = {
     1: "WhatsApp",
     2: "Facebook",
 }
+
 
 def get_platform_name(platform_id) -> str:
     """Convert platform_id to platform name string."""
@@ -65,38 +79,84 @@ def count_request():
 
 
 # ── colours ───────────────────────────────────────────────────────────────────
-NAVY      = colors.HexColor("#1B4B8A")
-CREAM     = colors.HexColor("#F5F0E8")
+NAVY = colors.HexColor("#1B4B8A")
+CREAM = colors.HexColor("#F5F0E8")
 LIGHT_ROW = colors.HexColor("#EAF0FA")
-WHITE     = colors.white
-MUTED     = colors.HexColor("#6B7280")
-DARK      = colors.HexColor("#1F2937")
+WHITE = colors.white
+MUTED = colors.HexColor("#6B7280")
+DARK = colors.HexColor("#1F2937")
 
 # ── font ──────────────────────────────────────────────────────────────────────
-_FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Cairo.ttf")
+_FONT_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "Cairo.ttf"
+)
+
+# مجموعة الأكواد (codepoints) اللي فعليًا موجودة كـ glyph جوه Cairo.ttf.
+# بنستخدمها في _fix_missing_glyphs() عشان نلاقي بدايل للحروف اللي
+# الخط ده مش عامله رسمة ليها (زي بعض أشكال الحروف "المنعزلة" isolated).
+_FONT_GLYPHS = set()
+
 
 def _register_font() -> str:
-    try:
-        pdfmetrics.registerFont(TTFont("Cairo", _FONT_PATH))
-        return "Cairo"
-    except Exception:
-        return "Helvetica"
+    global _FONT_GLYPHS
+    if os.path.exists(_FONT_PATH):
+        try:
+            font = TTFont("Cairo", _FONT_PATH)
+            pdfmetrics.registerFont(font)
+            # نجيب كل الأكواد اللي الخط فعلاً بيدعمها (charToGlyph) عشان
+            # نستخدمها لاحقًا في تفادي الحروف الناقصة.
+            try:
+                _FONT_GLYPHS = set(font.face.charToGlyph.keys())
+            except Exception as e:
+                print(f"[Font Warning] Could not read glyph map: {e}")
+                _FONT_GLYPHS = set()
+            return "Cairo"
+        except Exception as e:
+            print(f"[Font Error] Failed to register Cairo: {e}")
+    else:
+        print(f"[Font Warning] {_FONT_PATH} not found! Falling back.")
+    return "Helvetica"
+
 
 # ── Arabic helper ─────────────────────────────────────────────────────────────
-def _ar(text: str) -> str:
-    if not text:
+
+
+
+def _fix_missing_glyphs(text: str) -> str:
+    """يستبدل أي حرف مش موجود له رسمة (glyph) جوه خط Cairo.ttf بالحرف
+    العربي الأساسي المكافئ له.
+
+    السبب: بعد التشكيل (reshape) بيتحول بعض الحروف اللي متصلش بما بعدها
+    (زي ا / د / ذ / ر / ز / و) للشكل "المنعزل" (isolated) الخاص بيها -
+    ودا اللي بيحصل غالبًا لأول حرف في الكلمة أو بعد حرف تاني من نفس
+    النوعية. المشكلة إن خط Cairo.ttf ناقصه رسمة (glyph) لبعض أكواد
+    الأشكال المنعزلة دي، فالحرف بيختفي تمامًا من الـ PDF. الحل إننا
+    نرجّعه لكوده العربي الأساسي (الغير مُشكَّل) لأن رسمته موجودة في
+    الخط وبتتعرض بصريًا كشكل منعزل برضه.
+    """
+    if not _FONT_GLYPHS:
         return text
-    try:
-        reshaped = arabic_reshaper.reshape(text)
-        return get_display(reshaped)
-    except Exception:
-        return text
+    result = []
+    for ch in text:
+        if ord(ch) in _FONT_GLYPHS or ch in (" ", "\u00A0"):
+            result.append(ch)
+            continue
+        fallback = unicodedata.normalize("NFKC", ch)
+        if fallback and all(ord(c) in _FONT_GLYPHS for c in fallback):
+            result.append(fallback)
+        else:
+            result.append(ch)
+    return "".join(result)
+
 
 def _is_arabic(text: str) -> bool:
     return any("\u0600" <= c <= "\u06FF" for c in (text or ""))
 
+
 # ── style factory ─────────────────────────────────────────────────────────────
-def _ps(name_: str, font: str, size: int, color=DARK, align: int = 0) -> ParagraphStyle:
+def _ps(
+    name_: str, font: str, size: int, color=DARK, align: int = 0
+) -> ParagraphStyle:
     return ParagraphStyle(
         name_,
         fontName=font,
@@ -106,152 +166,235 @@ def _ps(name_: str, font: str, size: int, color=DARK, align: int = 0) -> Paragra
         leading=size * 1.45,
     )
 
+
+# ── Arabic helper المعدلة مع مسافة الأمان ──────────────────────────────────────
+def _ar(text) -> str:
+    if not text:
+        return ""
+    try:
+        str_text = str(text).strip()
+        if not str_text:
+            return ""
+        reshaped = arabic_reshaper.reshape(str_text)
+        displayed = get_display(reshaped)
+        # نصلّح أي حرف اختفى بسبب نقص في رسومات (glyphs) خط Cairo.ttf
+        displayed = _fix_missing_glyphs(displayed)
+        # إضافة مسافة غير قابلة للكسر (NBSP) في بداية ونهاية النص لمنع ReportLab
+        # من قص الحروف المتطرفة. المسافة العادية (" ") بيتم حذفها تلقائيًا
+        # بواسطة Paragraph في ReportLab (بيتعامل معها زي HTML)، فمفيش فايدة منها.
+        return "\u00A0" + displayed + "\u00A0"
+    except Exception:
+        return str(text)
+
+
 def generate_booking_pdf(
     name: str,
     phone: str,
     date: str,
     details: str,
     reference_id: str,
-    address:str,
+    time: str,
+    address: str,
 ) -> bytes:
+    font = _register_font()
+    buffer = io.BytesIO()
 
-    font     = _register_font()
-    buffer   = io.BytesIO()
-    margin   = 18 * mm
-    usable_w = A4[0] - 2 * margin
+    margin = 15 * mm
+    usable_w = A4[0] - (margin * 2)
 
     doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        leftMargin=margin, rightMargin=margin,
-        topMargin=12*mm, bottomMargin=12*mm,
+        buffer,
+        pagesize=A4,
+        leftMargin=margin,
+        rightMargin=margin,
+        topMargin=10 * mm,
+        bottomMargin=10 * mm,
     )
 
     story = []
 
-    # ── cream header: logo icon + laboratory name ─────────────────────────────
-    clinic_ar = _ar("مختبر التحاليل الطبية التخصصي")
-    
-    hdr = Table(
-        [[
-            Paragraph("✚", _ps("icon", "Helvetica", 22, NAVY, align=0)),
-            Paragraph(clinic_ar, _ps("clin", font, 15, NAVY, align=2)),
-        ]],
-        colWidths=[16*mm, usable_w - 16*mm],
+    # ==========================================================
+    # Header
+    # ==========================================================
+    logo_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "logo.jpeg"
     )
-    hdr.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,-1), CREAM),
-        ("TOPPADDING",    (0,0),(-1,-1), 13),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 13),
-        ("LEFTPADDING",   (0,0),(-1,-1), 12),
-        ("RIGHTPADDING",  (0,0),(-1,-1), 12),
-        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
-        ("ROUNDEDCORNERS",[8,8,0,0]),
-    ]))
-    story.append(hdr)
 
-    # ── navy title bar ────────────────────────────────────────────────────────
-    title_ar = _ar("تأكيد حجز موعد التحليل")
-    
+    if os.path.exists(logo_path):
+        logo = Image(logo_path, width=42 * mm, height=26 * mm)
+    else:
+        logo = Paragraph("", _ps("empty", font, 1))
+
+    title_table = Table(
+        [
+            [
+                Paragraph(
+                    _ar("مجموعة معامل"),
+                    _ps(
+                        "clinic1",
+                        font,
+                        13,
+                        colors.HexColor("#D79A29"),
+                        align=2,
+                    ),
+                )
+            ],
+            [
+                Paragraph(
+                    _ar("الدكتور بديوي"),
+                    _ps(
+                        "clinic2",
+                        font,
+                        22,
+                        colors.HexColor("#D79A29"),
+                        align=2,
+                    ),
+                )
+            ],
+        ],
+        colWidths=[usable_w - 50 * mm],
+    )
+
+    header = Table(
+        [[logo, title_table]], colWidths=[45 * mm, usable_w - 45 * mm]
+    )
+    header.setStyle(
+        TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ])
+    )
+    story.append(header)
+    story.append(Spacer(1, 6 * mm))
+
+    # Title
     ttl = Table(
         [[
-            Paragraph("Booking Confirmation", _ps("ten", font, 11, WHITE, align=0)),
-            Paragraph(title_ar,               _ps("tar", font, 12, WHITE, align=2)),
+            Paragraph(
+                "Booking Confirmation",
+                _ps("en", font, 11, WHITE, align=0),
+            ),
+            Paragraph(
+                _ar("تأكيد حجز موعد التحليل"),
+                _ps("ar", font, 12, WHITE, align=2),
+            ),
         ]],
-        colWidths=[usable_w/2, usable_w/2],
+        colWidths=[usable_w / 2, usable_w / 2],
     )
-    ttl.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,-1), NAVY),
-        ("TOPPADDING",    (0,0),(-1,-1), 10),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 10),
-        ("LEFTPADDING",   (0,0),(-1,-1), 12),
-        ("RIGHTPADDING",  (0,0),(-1,-1), 12),
-        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
-    ]))
+    ttl.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), NAVY),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ])
+    )
     story.append(ttl)
 
-    # ── reference bar ─────────────────────────────────────────────────────────
+    # Reference
     ref = Table(
-        [[Paragraph(f"Reference: {reference_id}", _ps("ref", font, 10, NAVY, align=1))]],
+        [[
+            Paragraph(
+                f"Reference: {reference_id}",
+                _ps("ref", font, 10, NAVY, align=1),
+            )
+        ]],
         colWidths=[usable_w],
     )
-    ref.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,-1), CREAM),
-        ("TOPPADDING",    (0,0),(-1,-1), 7),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 7),
-        ("ROUNDEDCORNERS",[0,0,8,8]),
-    ]))
+    ref.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), CREAM),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ])
+    )
     story.append(ref)
-    story.append(Spacer(1, 8*mm))
+    story.append(Spacer(1, 6 * mm))
 
-    # ── info rows ─────────────────────────────────────────────────────────────
+    # ── Info Table ────────────────────────────────────────────────────────────
     fields = [
-        ("Patient Name",     "اسم المريض",    name),
-        ("Phone",            "رقم الهاتف",    phone),
-        ("Appointment Date", "تاريخ الموعد",  date),
-        ("Required Analysis","التحاليل المطلوبة", details),
-        ("address","العوان",address)
+        ("Patient Name", "اسم المريض", name),
+        ("Phone", "رقم الهاتف", phone),
+        ("Appointment Date", "تاريخ الموعد", date),
+        ("Required Analysis", "التحاليل المطلوبة", details),
+        ("Address", "العنوان", address),
+        ("Time", "الوقت", time),
     ]
+
+    # زيادة عرض عمود العناوين وتقليل الحواشي الداخلية لمنع القص
+    label_col_w = 78 * mm
+    val_col_w = usable_w - label_col_w
 
     rows = []
     for i, (en_lbl, ar_lbl, val) in enumerate(fields):
         lbl_text = f"{en_lbl} / {_ar(ar_lbl)}"
         lbl_cell = Paragraph(lbl_text, _ps(f"l_{i}", font, 9, MUTED, align=0))
-        
-        val_text  = _ar(val) if _is_arabic(val or "") else (val or "—")
-        val_align = 2 if _is_arabic(val or "") else 0
-        val_cell  = Paragraph(val_text, _ps(f"v_{i}", font, 11, DARK, align=val_align))
-        
+
+        val_str = str(val or "—")
+        val_is_ar = _is_arabic(val_str)
+        val_text = _ar(val_str) if val_is_ar else val_str
+        val_align = 2 if val_is_ar else 0
+
+        val_cell = Paragraph(
+            val_text, _ps(f"v_{i}", font, 10, DARK, align=val_align)
+        )
         rows.append([lbl_cell, val_cell])
 
-    info = Table(rows, colWidths=[65*mm, usable_w - 65*mm])
-    info.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,-1), WHITE),
-        ("BACKGROUND",    (0,0),(-1,0),  LIGHT_ROW),
-        ("BACKGROUND",    (0,2),(-1,2),  LIGHT_ROW),
-        ("LINEBELOW",     (0,0),(-1,-2), 0.5, colors.HexColor("#DDE3EE")),
-        ("TOPPADDING",    (0,0),(-1,-1), 12),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 12),
-        ("LEFTPADDING",   (0,0),(-1,-1), 12),
-        ("RIGHTPADDING",  (0,0),(-1,-1), 12),
-        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
-        ("ROUNDEDCORNERS",[6,6,6,6]),
-    ]))
+    info = Table(rows, colWidths=[label_col_w, val_col_w])
+    info.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), WHITE),
+            ("BACKGROUND", (0, 0), (-1, 0), LIGHT_ROW),
+            ("BACKGROUND", (0, 2), (-1, 2), LIGHT_ROW),
+            ("BACKGROUND", (0, 4), (-1, 4), LIGHT_ROW),
+            ("LINEBELOW", (0, 0), (-1, -2), 0.5, colors.HexColor("#DDE3EE")),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ])
+    )
     story.append(info)
-    story.append(Spacer(1, 10*mm))
+    story.append(Spacer(1, 8 * mm))
 
-    # ── footer ────────────────────────────────────────────────────────────────
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#C5D0E0")))
-    story.append(Spacer(1, 3*mm))
-    
-    issued    = datetime.now(timezone.utc).strftime("%B %d, %Y  %H:%M UTC")
-    footer_ar = _ar("احتفظ بهذه البطاقة للمراجعة")
-    
+    # Footer
+    story.append(
+        HRFlowable(
+            width="100%", thickness=0.5, color=colors.HexColor("#C5D0E0")
+        )
+    )
+    story.append(Spacer(1, 3 * mm))
+
+    issued = datetime.now(timezone.utc).strftime("%B %d, %Y %H:%M UTC")
     footer_table = Table(
         [[
             Paragraph(f"Issued: {issued}", _ps("fl", font, 8, MUTED, align=0)),
-            Paragraph(footer_ar,           _ps("fr", font, 8, MUTED, align=2)),
+            Paragraph(
+                _ar("احتفظ بهذه البطاقة للمراجعة"),
+                _ps("fr", font, 8, MUTED, align=2),
+            ),
         ]],
-        colWidths=[usable_w/2, usable_w/2],
+        colWidths=[usable_w / 2, usable_w / 2],
     )
-    footer_table.setStyle(TableStyle([
-        ("TOPPADDING",    (0,0),(-1,-1), 2),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 2),
-        ("LEFTPADDING",   (0,0),(-1,-1), 0),
-        ("RIGHTPADDING",  (0,0),(-1,-1), 0),
-        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
-    ]))
+    footer_table.setStyle(
+        TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ])
+    )
     story.append(footer_table)
 
     doc.build(story)
     return buffer.getvalue()
-import json
-import re
-import ast
-from knowledge.schemas import AliasNames
 
-
+# ── Parsing Helpers ───────────────────────────────────────────────────────────
 def parse_alias_names(value) -> AliasNames:
-    """يحول القيمة المخزنة (JSON string / repr string / dict / AliasNames) لـ AliasNames object"""
+    """يحول القيمة المخزنة لـ AliasNames object"""
     if isinstance(value, AliasNames):
         return value
     if isinstance(value, dict):
@@ -261,7 +404,7 @@ def parse_alias_names(value) -> AliasNames:
 
     value = value.strip()
 
-    if value.startswith('{'):
+    if value.startswith("{"):
         try:
             return AliasNames(**json.loads(value))
         except (json.JSONDecodeError, TypeError):
@@ -271,22 +414,21 @@ def parse_alias_names(value) -> AliasNames:
     list_match = re.search(r"aliases=(\[.*\])\s*$", value)
     if list_match:
         try:
-            result['aliases'] = ast.literal_eval(list_match.group(1))
+            result["aliases"] = ast.literal_eval(list_match.group(1))
         except Exception:
-            result['aliases'] = []
-        value = value[:list_match.start()]
+            result["aliases"] = []
+        value = value[: list_match.start()]
 
-    for field in ['alias', 'measurement', 'equivalent_name']:
-        m = re.search(rf"{field}='((?:[^'\\]|\\.)*)'", value)
+    for field in ["alias", "measurement", "equivalent_name"]:
+        m = re.search(fr"{field}='((?:[^'\\]|\\.)*)'", value)
         if m:
             result[field] = m.group(1)
 
     return AliasNames(**result)
 
 
-    
 def parse_keywords(value) -> list[str]:
-    """يحول القيمة المخزنة (JSON list string / comma-separated string / list) لـ list[str]"""
+    """يحول القيمة المخزنة لـ list[str]"""
     if isinstance(value, list):
         return [str(k).strip() for k in value if str(k).strip()]
     if not isinstance(value, str) or not value.strip():
@@ -294,8 +436,7 @@ def parse_keywords(value) -> list[str]:
 
     value = value.strip()
 
-    # الحالة الطبيعية: JSON list زي '["a", "b", "c"]'
-    if value.startswith('['):
+    if value.startswith("["):
         try:
             parsed = json.loads(value)
             if isinstance(parsed, list):
@@ -308,5 +449,4 @@ def parse_keywords(value) -> list[str]:
             except Exception:
                 pass
 
-    # fallback: comma-separated string عادي "a, b, c"
-    return [k.strip() for k in value.split(',') if k.strip()]
+    return [k.strip() for k in value.split(",") if k.strip()]

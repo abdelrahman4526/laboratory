@@ -63,8 +63,8 @@ class InquiryService:
     def get_stats():
         total      = Inquiry.query.count()
         pending    = Inquiry.query.filter_by(status=Status.PENDING).count()
-        reviewed   = Inquiry.query.filter_by(status=Status.REVIEWED).count()
-        attended   = Inquiry.query.filter_by(status=Status.ATTENDED).count()
+        done  = Inquiry.query.filter_by(status=Status.DONE).count()
+        confirmed  = Inquiry.query.filter_by(status=Status.CONFIRMED).count()
 
         # average confidence score for inquiries that have one
         from sqlalchemy import func
@@ -75,8 +75,8 @@ class InquiryService:
         return {
             "total":    total,
             "pending":  pending,
-            "reviewed": reviewed,
-            "attended": attended,
+            "done": done,
+            "confirmed": confirmed,
             "avg_conf": round((avg_conf or 0) * 100, 1),   # 0-100 %
         }
 

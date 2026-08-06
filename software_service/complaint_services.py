@@ -59,13 +59,13 @@ class ComplaintService:
     def get_stats():
         total    = Complaint.query.count()
         pending  = Complaint.query.filter_by(status=Status.PENDING).count()
-        reviewed = Complaint.query.filter_by(status=Status.REVIEWED).count()
-        attended = Complaint.query.filter_by(status=Status.ATTENDED).count()
+        done= Complaint.query.filter_by(status=Status.DONE).count()
+        confirmed = Complaint.query.filter_by(status=Status.CONFIRMED).count()
         return {
             "total":    total,
             "pending":  pending,
-            "reviewed": reviewed,
-            "attended": attended,
+            "done": done,
+            "confirmed": confirmed,
         }
 
     # ── write ─────────────────────────────────────────────────────────────────

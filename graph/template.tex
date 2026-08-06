@@ -1,0 +1,91 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[geometry]{geometry}
+\geometry{a4paper, margin=15mm, top=10mm, bottom=10mm}
+
+\usepackage{polyglossia}
+\setmainlanguage{arabic}
+\setotherlanguage{english}
+
+\newfontfamily\arabicfont[Script=Arabic]{Cairo}
+\newfontfamily\englishfont{Arial}
+
+\usepackage{xcolor}
+\usepackage{colortbl}
+\usepackage{graphicx}
+\usepackage{tabularx}
+
+\definecolor{navy}{HTML}{1B4B8A}
+\definecolor{cream}{HTML}{F5F0E8}
+\definecolor{lightrow}{HTML}{EAF0FA}
+\definecolor{muted}{HTML}{6B7280}
+\definecolor{gold}{HTML}{D79A29}
+
+\pagestyle{empty}
+
+\begin{document}
+
+% ── Header ────────────────────────────────────────────────────────
+\noindent
+\begin{tabularx}{\textwidth}{@{} m{45mm} >{\raggedleft\arraybackslash}X @{}}
+    \VAR_LOGO_CODE &
+    {\Large\bfseries\color{gold} مجموعة معامل} \\
+    & {\Huge\bfseries\color{gold} الدكتور بديوي}
+\end{tabularx}
+
+\vspace{4mm}
+
+% ── Title Bar ─────────────────────────────────────────────────────
+\noindent
+\colorbox{navy}{%
+    \parbox{\dimexpr\textwidth-2\fboxsep\relax}{%
+        \vspace{2mm}
+        \textcolor{white}{\textenglish{\textbf{Booking Confirmation}}} \hfill 
+        \textcolor{white}{\textbf{تأكيد حجز موعد التحليل}}
+        \vspace{2mm}
+    }%
+}
+
+\vspace{2mm}
+
+% ── Reference ─────────────────────────────────────────────────────
+\noindent
+\colorbox{cream}{%
+    \parbox{\dimexpr\textwidth-2\fboxsep\relax}{%
+        \centering \vspace{1mm}
+        \textcolor{navy}{\textenglish{\textbf{Reference: VAR_REF_ID}}}
+        \vspace{1mm}
+    }%
+}
+
+\vspace{4mm}
+
+% ── Details Table ─────────────────────────────────────────────────
+\setlength{\extrarowheight}{5pt}
+\noindent
+\begin{tabularx}{\textwidth}{@{} >{\raggedright\arraybackslash\color{muted}}p{70mm} >{\raggedleft\arraybackslash}X @{}}
+    \rowcolor{lightrow}
+    \textenglish{Patient Name} / اسم المريض & VAR_NAME \\
+    \hline
+    \textenglish{Phone} / رقم الهاتف & \textenglish{VAR_PHONE} \\
+    \hline
+    \rowcolor{lightrow}
+    \textenglish{Appointment Date} / تاريخ الموعد & \textenglish{VAR_DATE} \\
+    \hline
+    \textenglish{Time} / الوقت & \textenglish{VAR_TIME} \\
+    \hline
+    \rowcolor{lightrow}
+    \textenglish{Required Analysis} / التحاليل المطلوبة & VAR_DETAILS \\
+    \hline
+    \textenglish{Address} / العنوان & VAR_ADDRESS \\
+\end{tabularx}
+
+\vspace{8mm}
+
+% ── Footer ────────────────────────────────────────────────────────
+\vfill
+\color{muted}\hrule
+\vspace{2mm}
+\noindent
+\textenglish{\small Issued: VAR_ISSUED} \hfill \small احتفظ بهذه البطاقة للمراجعة
+
+\end{document}

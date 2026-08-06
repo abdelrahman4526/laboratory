@@ -148,7 +148,7 @@ def process_prescription_ocr(
                 ocr_extracted_text=extracted_text,
                 confidence_score=overall_confidence / 100.0,
                 services_mentioned=services_str,
-                status=Status.REVIEWED,
+                status=Status.DONE,
             )
         except Exception as exc:
             logger.error(
