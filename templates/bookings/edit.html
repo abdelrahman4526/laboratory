@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}تعديل الحجز{% endblock %}
+{% block topbar_title %}تعديل الحجز{% endblock %}
+{% block topbar_sub %}{{ visit.name }} — #{{ visit.reference_id }}{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:640px;">
+  <div class="card-header">
+    <span class="card-title">بيانات الحجز</span>
+    <code style="background:rgba(99,102,241,.1);color:#818cf8;padding:.25rem .75rem;border-radius:6px;font-size:.9rem;">
+      #{{ visit.reference_id }}
+    </code>
+  </div>
+
+  <form action="{{ url_for('edit_booking', visit_id=visit.id) }}" method="POST" style="padding:1.5rem;">
+    <div class="form-grid">
+
+      <div class="form-group full-width">
+        <label>اسم المريض <span style="color:#f87171;">*</span></label>
+        <input
+          type="text"
+          name="name"
+          class="form-control"
+          placeholder="الاسم الكامل"
+          required
+          value="{{ request.form.get('name', visit.name) }}"
+        >
+      </div>
+
+      <div class="form-group full-width">
+        <label>رقم الهاتف <span style="color:#f87171;">*</span></label>
+        <input
+          type="text"
+          name="phone_number"
+          class="form-control"
+          placeholder="01xxxxxxxxx"
+          required
+          value="{{ request.form.get('phone_number', visit.phone_number) }}"
+        >
+      </div>
+
+      <div class="form-group full-width">
+        <label>تاريخ الحجز</label>
+        <input
+          type="text"
+          name="date"
+          class="form-control"
+          placeholder="مثال: 2024-12-25 أو الأحد الصباح"
+          value="{{ request.form.get('date', visit.date) }}"
+        >
+      </div>
+      <div class="form-group full-width">
+        <label>وقت الحجز</label>
+        <input
+          type="text"
+          name="time"
+          class="form-control"
+          placeholder="AM مثال:10:00"
+          value="{{ request.form.get('time', visit.time) }}"
+        >
+      </div>
+
+      <div class="form-group full-width">
+        <label>العنوان</label>
+        <input
+          type="text"
+          name="address"
+          class="form-control"
+          placeholder="العنوان بالتفصيل (الحي - الشارع - علامة مميزة)"
+          value="{{ request.form.get('address', visit.address) }}"
+        >
+      </div>
+
+      <div class="form-group full-width">
+        <label>تفاصيل إضافية</label>
+        <textarea
+          name="details"
+          class="form-control"
+          rows="3"
+          placeholder="أي ملاحظات إضافية (اختياري)"
+        >{{ request.form.get('details', visit.details) }}</textarea>
+      </div>
+
+      <div class="form-group full-width">
+        <label>الحالة</label>
+        <select name="status" class="form-control status-select {% if visit.status %}status-{{ visit.status.value | lower | replace(' ', '-') }}{% endif %}">
+          {% for s in all_statuses %}
+            <option value="{{ s.value }}" {% if visit.status == s %}selected{% endif %}>
+              {{ s.value }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}" style="margin-bottom:1rem;">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary btn-submit">حفظ التعديلات</button>
+      <a href="{{ url_for('view_booking', visit_id=visit.id) }}" class="btn btn-ghost">إلغاء</a>
+    </div>
+  </form>
+
+  {% if visit.status.value == 'Confirmed' or visit.status.name == 'CONFIRMED' %}
+  <div style="padding:0 1.5rem 1.5rem;">
+    <form method="POST" action="{{ url_for('confirm_booking', visit_id=visit.id) }}"
+          onsubmit="return confirm('تأكيد الحجز وإرسال رسالة للعميل؟')">
+      <button type="submit" class="btn btn-primary" style="width:100%; background: linear-gradient(135deg, #D49520 0%, #B87E14 100%); border: none; font-weight: 700; color: #fff; box-shadow: 0 4px 14px rgba(229,169,60,0.3);">تأكيد الحجز وإرسال رد للعميل</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

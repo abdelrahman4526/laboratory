@@ -14,7 +14,7 @@ class AgentState(TypedDict):
 
     # routing
     intent: Optional[str]
-    refined_query: Optional[str]
+    refined_queries: Optional[list]
 
    
     # memory
@@ -22,7 +22,7 @@ class AgentState(TypedDict):
     last_bot_message: Optional[str]
 
     # flags
-    booking_saved: Optional[bool]
+    visit_saved: Optional[bool]
     complaint_saved: Optional[bool]
     inquiry_saved: Optional[bool]
 
@@ -34,7 +34,7 @@ class AgentState(TypedDict):
     inquiry_usage: Optional[dict]
     direct_usage: Optional[dict]
 
-    booking_reference: Optional[str]
+    visit_reference: Optional[str]
     booking_pdf: Optional[bytes]
 
 

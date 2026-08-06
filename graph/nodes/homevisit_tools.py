@@ -6,11 +6,13 @@ from software_service.homevisit_service import homevisitService ,homevisitResult
 @tool
 def save_visit_tool(
     name: str,
-    phone: str,
+   phone_number: str,
     date: str,
     details: str,
     address: str,
+    time: str,
     comes_from: str = "unknown",
+    
 ) -> homevisitResult:
     """
     Save a confirmed appointment booking to the database.
@@ -21,8 +23,10 @@ def save_visit_tool(
 
     return homevisitService.create_visit(
         name=name,
-        phone_number=phone,
+        phone_number=phone_number,
         date=date,
         details=details,
-        comes_from=platform_name,
+        address= address,
+        comes_from=comes_from,
+        time= time,
     )

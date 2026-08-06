@@ -8,7 +8,7 @@ class LaboratoryService:
         """Get default laboratory ID or create a default lab record if none exists."""
         lab = Laboratory.query.first()
         if not lab:
-            lab = Laboratory(name="المعمل الرئيسي", address="الإسكندرية", info="معمل تحاليل رئيسي")
+            lab = Laboratory(name="المعمل الرئيسي", info="معمل تحاليل رئيسي")
             db.session.add(lab)
             db.session.commit()
         return lab.id
@@ -20,8 +20,8 @@ class LaboratoryService:
 
         if search:
             query = query.filter(
-                (Laboratory.name.ilike(f"%{search}%")) |
-                (Laboratory.address.ilike(f"%{search}%"))
+                (Laboratory.name.ilike(f"%{search}%")) 
+                
             )
 
         query = query.order_by(Laboratory.id.desc())
@@ -36,20 +36,19 @@ class LaboratoryService:
         return lab, "تم العثور على المعمل"
 
     @staticmethod
-    def create_laboratory(name, address=None, info=None):
+    def create_laboratory(name, info=None):
         """Create a new laboratory."""
         if not name or not name.strip():
             return None, "اسم المعمل مطلوب"
 
         lab = Laboratory(
             name=name.strip(),
-            address=address.strip() if address else None,
             info=info.strip() if info else None
         )
         return BaseService.commit(lab, success_msg="تم إضافة المعمل بنجاح", error_prefix="حدث خطأ أثناء الإضافة")
 
     @staticmethod
-    def update_laboratory(lab_id, name=None, address=None, info=None):
+    def update_laboratory(lab_id, name=None, info=None):
         """Update an existing laboratory."""
         lab = Laboratory.query.get(lab_id)
         if not lab:
@@ -57,8 +56,7 @@ class LaboratoryService:
 
         if name:
             lab.name = name.strip()
-        if address is not None:
-            lab.address = address.strip() if address else None
+        
         if info is not None:
             lab.info = info.strip() if info else None
 
