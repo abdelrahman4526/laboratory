@@ -1,10 +1,17 @@
 import os
+import logging
 from urllib.parse import quote_plus
-from flask import Flask
+from datetime import datetime, timedelta, timezone
+import threading
+from griffe import logger
+
+
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort
 from flask_migrate import Migrate
-from flask_login import LoginManager
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from dotenv import load_dotenv
-from models.models import db
+
+from models.models import db, User, Laboratory, Page, LabService, Status, Homevisit, Branch,Platform
 from software_service.laboratory_services import LaboratoryService
 from software_service.homevisit_service import homevisitService
 from software_service.inquiry_services import InquiryService
@@ -12,27 +19,18 @@ from software_service.complaint_services import ComplaintService
 from software_service.user_services import UserService
 from software_service.client_services import ClientService
 from software_service.lab_service_services import LabServiceService
-import os
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort
-from flask_migrate import Migrate
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from dotenv import load_dotenv
-import threading
-from datetime  import datetime,timedelta ,timezone
-from models.models import db, User, Laboratory, Page, LabService, Status, Homevisit ,Branch
-
 from software_service.platform_services import PlatformService
 from software_service.page_services import PageService
-from graph.utils import parse_alias_names,parse_keywords,generate_booking_pdf
-from platforms.facebook_handler import FacebookHandler
-from parsers.facebook import parse_facebook_message, parse_facebook_comment
-from knowledge.vector_store import ensure_vector_table
 from software_service.subscripition_service import SubscriptionService
-load_dotenv()
 
-# ── App & Config ──────────────────────────────────────────────────────────────
-ensure_vector_table() 
-import logging
+from graph.utils import parse_alias_names, parse_keywords, generate_booking_pdf
+from platforms.facebook_handler import FacebookHandler
+from platforms.waha_handler import WahaHandler
+from parsers.facebook import parse_facebook_message, parse_facebook_comment
+
+# from knowledge.vector_store import ensure_vector_table  # pgvector-specific — replaced by FAISS init below
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,11 +40,10 @@ logging.basicConfig(
         logging.FileHandler("app.log", encoding="utf-8"),
     ],
 )
+
 app = Flask(__name__)
 
-secret_key = os.environ.get('SECRET_KEY')
-if not secret_key:
-    secret_key = 'dev-secret-key-change-in-production'
+secret_key = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
 
 db_uri = os.environ.get('SQLALCHEMY_DATABASE_URI')
 if not db_uri:
@@ -61,11 +58,9 @@ app.config['SECRET_KEY'] = secret_key
 app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-
-
-
 db.init_app(app)
 migrate = Migrate(app, db)
+
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'يجب تسجيل الدخول أولاً'
@@ -77,7 +72,10 @@ def load_user(user_id):
     return db.session.get(User, int(user_id))
 
 
-# ── Context Processor (sidebar badge) ────────────────────────────────────────
+# TODO: initialize/load the FAISS index here once knowledge/vector_store.py is converted
+# from knowledge.vector_store import load_or_create_faiss_index
+# faiss_index = load_or_create_faiss_index()
+
 
 @app.context_processor
 def inject_globals():
@@ -93,13 +91,11 @@ def inject_globals():
 # Auth routes
 # ══════════════════════════════════════════════════════════════════════════
 
-# redirect root to login
 @app.route('/')
 def index():
     return redirect(url_for('login'))
 
 
-# login page + handle login form
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
@@ -115,7 +111,6 @@ def login():
     return render_template('login.html')
 
 
-# log the current user out
 @app.route('/logout')
 @login_required
 def logout():
@@ -127,8 +122,6 @@ def logout():
 # Dashboard routes
 # ══════════════════════════════════════════════════════════════════════════
 
-# main dashboard page
-# main dashboard page
 @app.route('/dashboard')
 @login_required
 def dashboard():
@@ -140,9 +133,7 @@ def dashboard():
     remaining_messages = 0
 
     if laboratory:
-        subscription = SubscriptionService.get_subscription_by_laboratory_id(
-            laboratory.id
-        )
+        subscription = SubscriptionService.get_subscription_by_laboratory_id(laboratory.id)
         if subscription:
             subscription_status = SubscriptionService.get_status(subscription)
             usage_percentage = SubscriptionService.usage_percentage(subscription)
@@ -155,7 +146,6 @@ def dashboard():
         usage_percentage=usage_percentage,
         remaining_messages=remaining_messages,
     )
-
 
 # ══════════════════════════════════════════════════════════════════════════
 # User routes
@@ -954,45 +944,63 @@ def confirm_inquiry(inquiry_id):
     reply_text = "\n".join(message_lines)
 
     comes_from = inquiry.comes_from or ""
-    if not comes_from.startswith("Facebook:"):
+    try:
+        platform, sender_id, page_id = comes_from.split(":", 2)
+    except ValueError:
         inquiry.services_mentioned = ", ".join(service_names)
-        inquiry.status = Status.DONE
+        inquiry.status = Status.REVIEWED
         db.session.commit()
-        flash('تمت المراجعة وحفظ البيانات محلياً (المصدر ليس Facebook).', 'success')
-        return redirect(url_for('inquiry_detail', inquiry_id=inquiry_id))
 
-    parts = comes_from.split(":")
-    sender_id = parts[1]
-    page_id = parts[2]
+        flash("تمت المراجعة وحفظ البيانات محلياً.", "success")
+        return redirect(url_for("inquiry_detail", inquiry_id=inquiry_id))
 
-    page = Page.query.filter_by(page_id=page_id).first()
+    platform_map = {
+        "Facebook": (2, FacebookHandler),
+        "WhatsApp": (1, WahaHandler),
+    }
+
+    if platform not in platform_map:
+        inquiry.services_mentioned = ", ".join(service_names)
+        inquiry.status = Status.REVIEWED
+        db.session.commit()
+
+        flash("تمت المراجعة وحفظ البيانات محلياً.", "success")
+        return redirect(url_for("inquiry_detail", inquiry_id=inquiry_id))
+
+    platform_id, handler_class = platform_map[platform]
+
+    page = Page.query.filter_by(
+        platform_id=platform_id,
+        page_id=page_id
+    ).first()
+
     if not page:
-        flash('الصفحة المرتبطة بهذا الاستفسار غير موجودة.', 'error')
-        return redirect(url_for('inquiry_detail', inquiry_id=inquiry_id))
+        flash("الصفحة المرتبطة بهذا الاستفسار غير موجودة.", "error")
+        return redirect(url_for("inquiry_detail", inquiry_id=inquiry_id))
 
     try:
-        handler = FacebookHandler(page)
+        handler = handler_class(page)
         handler.send(sender_id, reply_text)
 
         ClientService.update_client_summary_and_last_bot_message(
             sender_id=sender_id,
             page_id=page_id,
-            platform_id=2,
+            platform_id=platform_id,
             summary=f"Doctor reviewed prescription and confirmed tests: {', '.join(service_names)}. Total price: {total_price} EGP.",
             last_bot_message=reply_text
         )
 
         inquiry.services_mentioned = ", ".join(service_names)
-        inquiry.status = Status.DONE
+        inquiry.status = Status.REVIEWED
         db.session.commit()
 
-        flash('تم تأكيد الروشتة وإرسالها للمستخدم بنجاح.', 'success')
+        flash("تم تأكيد الروشتة وإرسالها للمستخدم بنجاح.", "success")
+
     except Exception as e:
         db.session.rollback()
-        flash(f'حدث خطأ أثناء إرسال الرد: {str(e)}', 'error')
+        flash(f"حدث خطأ أثناء إرسال الرد: {str(e)}", "error")
 
-    return redirect(url_for('inquiry_detail', inquiry_id=inquiry_id))
-
+    return redirect(url_for("inquiry_detail", inquiry_id=inquiry_id))
 
 # delete an inquiry
 @app.route('/inquiries/<int:inquiry_id>/delete', methods=['POST'])
@@ -1449,6 +1457,127 @@ def fb_webhook():
                 db.session.remove()
 
     threading.Thread(target=process, daemon=True).start()
+    return "OK", 200
+
+@app.route("/webhook/waha", methods=["POST"])
+def waha_webhook():
+    logger.info("Webhook received")
+    print("webhook received")
+
+    try:
+        data = request.json or {}
+        logger.info(data)
+    except Exception:
+        return "OK", 200
+
+    payload = data.get("payload", {})
+    print(payload)
+    session_name = data.get("session")
+    print(session_name)
+
+    def process(payload, session_name):
+        with app.app_context():
+            try:
+                whatsapp_platform = Platform.query.filter_by(
+                    name="whatsapp"
+                ).first()
+
+                if not whatsapp_platform:
+                    logger.error("WhatsApp platform not found")
+                    return
+
+                page = Page.query.filter_by(
+                    platform_id=whatsapp_platform.id
+                ).first()
+
+                if not page:
+                    logger.error("WhatsApp page not found")
+                    return
+
+                logger.info(
+                    "Using WhatsApp page: %s",
+                    page.page_id
+                )
+
+                handler = WahaHandler(page)
+
+                # Subscription
+                subscription = SubscriptionService.get_by_page(page)
+
+                message = handler.parse_message(
+                    payload,
+                    page.page_id
+                )
+
+                if not message:
+                    logger.info("Message ignored")
+                    return
+
+                allowed, _ = SubscriptionService.can_use_ai(subscription)
+
+                if not allowed:
+                    logger.warning(
+                        "Subscription limit reached for laboratory_id=%s",
+                        page.laboratory_id,
+                    )
+                    return
+
+                handler.send_typing(message.sender_id)
+
+                # NOTE: handler.handle() -> run_agent() already deducts
+                # this message + its real cost from the subscription
+                # internally (see message_processor._consume_subscription).
+                # Do not call SubscriptionService.consume() again here —
+                # that would double-count usage for every reply sent.
+                reply, ticket_bytes = handler.handle(message)
+
+                logger.info(
+                    "[WAHA] sender=%s has_reply=%s has_ticket=%s",
+                    message.sender_id,
+                    bool(reply),
+                    bool(ticket_bytes),
+                )
+
+                if reply:
+                    handler.send(
+                        message.sender_id,
+                        reply,
+                    )
+
+                if ticket_bytes:
+                    handler.send_image(
+                        recipient_id=message.sender_id,
+                        file_bytes=ticket_bytes,
+                        filename="booking_ticket.png",
+                    )
+
+            except Exception as e:
+                db.session.rollback()
+                logger.exception("WAHA webhook processing error")
+
+                try:
+                    from notfication_center.emailsender import send_production_alert
+
+                    send_production_alert(
+                        subject="WAHA Webhook Worker Failure",
+                        body_or_error=e,
+                        context={
+                            "session_name": session_name
+                        }
+                    )
+
+                except Exception:
+                    logger.exception("Failed to send production alert")
+
+            finally:
+                db.session.remove()
+
+    threading.Thread(
+                target=process,
+                args=(payload, session_name),
+                daemon=True
+                  ).start()
+
     return "OK", 200
 
 
