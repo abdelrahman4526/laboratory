@@ -1,0 +1,78 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: badewy-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-Mo162534}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lab_system}
+      MYSQL_USER: ${MYSQL_USER:-badewy}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-Mo162534}
+    volumes:
+      - mysqldata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-Mo162534}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  web:
+    build: .
+    container_name: badewy-labs-agent
+    restart: always
+    ports:
+      - "2003:4500"
+    volumes:
+      - ./instance:/app/instance
+      - ./static/uploads:/app/static/uploads
+      - ./faiss_index:/app/faiss_index
+    env_file:
+      - .env
+    environment:
+      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
+    depends_on:
+      db:
+        condition: service_healthy
+      waha:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4500/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+
+  waha:
+    image: devlikeapro/waha
+    container_name: badewy-waha
+    restart: always
+    shm_size: '2gb'
+    ports:
+      - "3005:3000"
+    environment:
+      - WAHA_DASHBOARD_USERNAME=${WAHA_DASHBOARD_USERNAME}
+      - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD}
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - WH_URL=http://web:4500/webhook/waha
+      - WH_EVENTS=message.upsert,message.any
+      - WAHA_SESSION_STORE=FILE
+      - WAHA_SESSIONS_DIR=/app/.sessions
+      - WHATSAPP_DEFAULT_ENGINE=WEBJS
+      - PUPPETEER_ARGS=--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu,--no-zygote,--disable-extensions
+      - WAHA_SESSION_CONFIG_IGNORE_STATUS=true
+      - WAHA_SESSION_CONFIG_IGNORE_BROADCAST=true
+    volumes:
+      - ./waha_sessions:/app/.sessions
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mysqldata:

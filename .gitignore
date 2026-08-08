@@ -34,3 +34,7 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+
+/waha_sessions
+/waha_sessions/default

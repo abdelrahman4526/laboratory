@@ -35,7 +35,7 @@ class EmailClient:
             logger.error("[NotificationCenter] Missing email credentials or receivers in environment.")
             return False
 
-        machine_identifier = os.environ.get("SERVER_IDENTIFIER", "ikhtiar-labs-app")
+        machine_identifier = os.environ.get("SERVER_IDENTIFIER", "el bedawy-labs-app")
         final_body = f"{machine_identifier}\n\n{body}"
 
         try:
@@ -77,3 +77,5 @@ def send_production_alert(subject: str, body_or_error, context: dict = None):
     body = f"PRODUCTION FAILURE DETECTED\nSubject: {subject}\n\n{error_str}\n{context_str}"
     return email_client.send_email(subject=f"[Alert] {subject}", body=body)
 
+
+    
