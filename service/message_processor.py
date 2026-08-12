@@ -2,11 +2,13 @@ import logging
 import os
 import uuid
 import requests
+
 from graph.graph import get_agent_graph
 from graph.agent_response import AgentResponse
-from graph.utils import count_request
+from graph.utils import count_request, extract_ocr_tests
 from software_service.client_services import ClientService
 from ocr.processor import process_prescription_ocr
+from models.models import Page  
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +74,8 @@ def _consume_subscription(message: "IncomingMessage", usage: dict) -> None:
     """
     Deducts one message + the real estimated cost from the laboratory's
     subscription, based on the page this message came in on.
-    Silently no-ops if the page/subscription can't be resolved, so a
-    billing lookup failure never breaks the reply to the user.
     """
     from software_service.subscripition_service import SubscriptionService
-    from models.models import Page
 
     try:
         page = Page.query.filter_by(
@@ -103,13 +102,22 @@ def _consume_subscription(message: "IncomingMessage", usage: dict) -> None:
         print(f"[_consume_subscription] Error: {e}")
 
 
-
 def run_agent(message: IncomingMessage, ocr_usage: dict = None) -> tuple[str, bytes | None]:
     client = ClientService.get_or_create_client(
         message.sender_id, message.page_id, message.platform_id
     )
 
     platform_name = message.platform_name or str(message.platform_id)
+
+    # ── pull any pending OCR-extracted tests embedded in the summary marker ──
+    ocr_tests = extract_ocr_tests(client.summary)
+
+    page = Page.query.filter_by(
+        page_id=message.page_id,
+        platform_id=message.platform_id,
+    ).first()
+    laboratory_id = page.laboratory_id if page else None
+    branch_id = page.branch_id if page else None
 
     state = {
         "page_id":           message.page_id,
@@ -119,22 +127,25 @@ def run_agent(message: IncomingMessage, ocr_usage: dict = None) -> tuple[str, by
         "user_message":      message.text or "",
         "summary":           client.summary          or "",
         "last_bot_message":  client.last_bot_message or "",
+        "ocrextracted_tests": ocr_tests or None,
+        "laboratory_id":     laboratory_id,
+        "branch_id":         branch_id,
         "intent":            None,
         "response":          None,
         "intent_usage":      None,
         "lab_info_usage":    None,
         "booking_usage":     None,
         "complaint_usage":   None,
-        "direct_usage":      None,   
+        "direct_usage":      None,
         "inquiry_usage":     None,
-        "visit_saved":     None,
+        "visit_saved":       None,
         "complaint_saved":   None,
         "inquiry_saved":     None,
     }
 
     logger.info(
-        "[run_agent] start | sender_id=%s | platform=%s | message=%r",
-        message.sender_id, platform_name, message.text,
+        "[run_agent] start | sender_id=%s | platform=%s | message=%r | ocr_tests=%s",
+        message.sender_id, platform_name, message.text, ocr_tests,
     )
 
     try:
@@ -170,7 +181,6 @@ def run_agent(message: IncomingMessage, ocr_usage: dict = None) -> tuple[str, by
         usage["req_per_dollar"],
     )
 
-    # Return reply text and any booking PDF generated
     return response_obj.response, result.get("booking_pdf")
 
 
@@ -191,9 +201,12 @@ def handle_image_message(message: IncomingMessage, page) -> tuple[str, bytes | N
             "[handle_image_message] downloading image | sender_id=%s | url=%s",
             message.sender_id, image_url,
         )
-        img_res = requests.get(image_url, timeout=30)
+        img_res = requests.get(
+            image_url,
+            timeout=30,
+            headers={"X-Api-Key": os.environ.get("WAHA_API_KEY", "")},
+        )
         if img_res.status_code == 200:
-            # Ensure static/uploads exists
             project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             uploads_dir = os.path.join(project_dir, "static", "uploads")
             os.makedirs(uploads_dir, exist_ok=True)
@@ -212,7 +225,7 @@ def handle_image_message(message: IncomingMessage, page) -> tuple[str, bytes | N
             ocr_result = process_prescription_ocr(
                 image_path=image_path,
                 phone_number="",
-                comes_from=f"Facebook:{message.sender_id}:{message.page_id}",
+                comes_from=f"{message.platform_name}:{message.sender_id}:{message.page_id}",
                 laboratory_id=page.laboratory_id
             )
 
@@ -224,16 +237,54 @@ def handle_image_message(message: IncomingMessage, page) -> tuple[str, bytes | N
             )
 
             if ocr_result.get("success"):
-                # High confidence prescription -> Send extracted text to LangGraph Agent
-                extracted_text = ocr_result.get("extracted_text", "")
-                message.text = f"[Prescription OCR Extracted Text]:\n{extracted_text}"
+                extracted_tests = [t for t in (ocr_result.get("services_mentioned") or []) if t]
+                tests_list = ", ".join(extracted_tests)
+                
+                
+                client = ClientService.get_or_create_client(
+                    message.sender_id, message.page_id, message.platform_id
+                )
+
+                ClientService.set_pending_ocr_tests(
+                    sender_id=message.sender_id,
+                    page_id=message.page_id,
+                    platform_id=message.platform_id,
+                    tests=extracted_tests,
+                )
+                message.text = (
+                    f"[Prescription OCR Extracted Tests]: {tests_list}\n"
+                    f"Please provide full details, preparations needed, and prices for these tests."
+                )
                 return run_agent(message, ocr_usage=ocr_usage)
+
+                
+                
+                # ─────────────────────────────────────────────────────────
+
+                if extracted_tests:
+                    tests_list = "\n".join([f"• {t}" for t in extracted_tests])
+                    static_reply = (
+                        f"تم استخراج التحاليل التالية من الروشتة:\n\n{tests_list}\n\n"
+                        "هل ترغب في المزيد من المعلومات التفصيليه لهذه التحليل ام حجز زياره منزليه ؟"
+                    )
+                else:
+                    static_reply = "تم استخراج الروشتة بنجاح. هل ترغب في حجز زيارة منزلية لمراجعتها؟"
+
+                ClientService.update_client_summary_and_last_bot_message(
+                    sender_id=message.sender_id,
+                    page_id=message.page_id,
+                    platform_id=message.platform_id,
+                    summary=client.summary,
+                    last_bot_message=static_reply,
+                )
+                count_request()
+
+                return static_reply, None
+
             else:
-                # Low confidence prescription or spam
                 if ocr_result.get("classified_as") == "prescription":
                     static_reply = "لقد استلمنا صورتك وسيقوم الطبيب بمراجعتها والرد عليك ."
-                    
-                    # Update Client summary in DB
+
                     ClientService.update_client_summary_and_last_bot_message(
                         sender_id=message.sender_id,
                         page_id=message.page_id,
@@ -256,4 +307,6 @@ def handle_image_message(message: IncomingMessage, page) -> tuple[str, bytes | N
         logger.exception(
             "[handle_image_message] error | sender_id=%s", message.sender_id,
         )
-        return "عذرًا، حدث خطأ أثناء معالجة الصورة المرفقة. يرجى المحاولة مرة أخرى.", None
+
+    return "عذرًا، حدث خطأ أثناء معالجة الصورة المرفقة. يرجى المحاولة مرة أخرى.", None
+    # مثال لدالة الـ OCR عندك

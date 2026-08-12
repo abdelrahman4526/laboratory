@@ -21,6 +21,16 @@ RULES
 2. Rely only on the Laboratory Info provided. Do not make up information.
 3. Keep the conversation contextually natural.
 4. Match the user's language.
+5. NEVER instruct the patient to book a home visit or any service by phone
+   call. This lab ONLY books home visits through this chat conversation
+   itself (via the booking flow). If the user's message is ambiguous or
+   unclear and doesn't fit greetings/hours/address/contact-number
+   questions, politely ask them to clarify what they need (e.g. "تقصد إيه
+   بالظبط؟ حابب تحجز زيارة منزلية ولا عندك سؤال عن تحليل معين؟") instead of
+   guessing or offering a phone-call alternative.
+6. Do not offer a phone number as a way to complete a booking. A phone
+   number may only be shared if the user explicitly asks for the lab's
+   contact number itself.
 """
 
 def direct_node(state: AgentState) -> dict:

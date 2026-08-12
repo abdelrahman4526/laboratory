@@ -18,7 +18,7 @@ from reportlab.platypus import (
 )
 
 from models.models import RequestCounter,db
-
+from models.models import LabService
 import ast
 from datetime import datetime, timezone
 import io
@@ -450,3 +450,45 @@ def parse_keywords(value) -> list[str]:
                 pass
 
     return [k.strip() for k in value.split(",") if k.strip()]
+"""
+Deterministic (non-LLM) helper for embedding OCR-extracted test names
+inside the Client.summary text field, so they survive across turns
+without relying on the LLM to preserve them verbatim inside its
+free-text summary rewriting.
+"""
+
+# ── OCR marker helpers (deterministic, non-LLM persistence inside summary) ──
+import re as _re
+
+_OCR_MARKER_RE = _re.compile(r"^\[PENDING_OCR_TESTS\]:.*$", _re.MULTILINE)
+
+
+def strip_ocr_marker(summary: str | None) -> str:
+    """Remove any existing marker line from a summary string."""
+    if not summary:
+        return ""
+    return _OCR_MARKER_RE.sub("", summary).strip()
+
+
+def extract_ocr_marker_line(summary: str | None) -> str:
+    """Return the raw marker line (e.g. '[PENDING_OCR_TESTS]: CBC | Vitamin D') or ''."""
+    if not summary:
+        return ""
+    m = _OCR_MARKER_RE.search(summary)
+    return m.group(0).strip() if m else ""
+
+
+def extract_ocr_tests(summary: str | None) -> list[str]:
+    """Parse the marker line back into a list of test names."""
+    line = extract_ocr_marker_line(summary)
+    if not line:
+        return []
+    payload = line.split(":", 1)[1].strip() if ":" in line else ""
+    return [t.strip() for t in payload.split("|") if t.strip()]
+
+
+def build_ocr_marker(tests: list[str] | None) -> str:
+    if not tests:
+        return ""
+    return "[PENDING_OCR_TESTS]: " + " | ".join(tests)
+# ── Lab test formatting (deterministic, non-LLM rendering) ──────────────────

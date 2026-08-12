@@ -22,9 +22,14 @@ class AgentState(TypedDict):
     last_bot_message: Optional[str]
 
     # flags
+   
     visit_saved: Optional[bool]
     complaint_saved: Optional[bool]
     inquiry_saved: Optional[bool]
+    visit: Optional[dict]
+    
+    laboratory_id: Optional[int]
+    branch_id: Optional[int]   
 
     # usage
     intent_usage: Optional[dict]
@@ -39,4 +44,5 @@ class AgentState(TypedDict):
 
 
     rag_context: Optional[str]
-    search_results: Optional[list]
+    search_results: Optional[list[Any]]
+    top_score: Optional[float]

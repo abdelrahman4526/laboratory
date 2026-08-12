@@ -3,7 +3,7 @@ software_services/client_services.py
 """
 
 from models.models import Client, db, Page, Laboratory
-
+from graph.utils import extract_ocr_marker_line, strip_ocr_marker, build_ocr_marker
 
 class ClientService:
 
@@ -47,7 +47,11 @@ class ClientService:
             return None, f"حدث خطأ أثناء التحديث: {str(e)}"
 
     @staticmethod
-    def update_client_summary_and_last_bot_message(sender_id, page_id, platform_id, summary=None, last_bot_message=None):
+    def update_client_summary_and_last_bot_message(
+        sender_id, page_id, platform_id,
+        summary=None, last_bot_message=None,
+        clear_ocr_marker=False,
+    ):
         client = Client.query.filter_by(
             platform_id=platform_id, page_id=page_id, sender_id=sender_id
         ).first()
@@ -58,12 +62,16 @@ class ClientService:
                 page_id=page_id,
                 sender_id=sender_id,
                 summary=summary,
-                last_bot_message=last_bot_message
+                last_bot_message=last_bot_message,
             )
             db.session.add(client)
         else:
             if summary is not None:
-                client.summary = summary
+                existing_marker = extract_ocr_marker_line(client.summary)
+                new_summary = strip_ocr_marker(summary)
+                if existing_marker and not clear_ocr_marker:
+                    new_summary = (new_summary + "\n" + existing_marker).strip()
+                client.summary = new_summary
             if last_bot_message is not None:
                 client.last_bot_message = last_bot_message
 
@@ -74,6 +82,25 @@ class ClientService:
             db.session.rollback()
             return None, f"حدث خطأ أثناء حفظ حالة العميل: {str(e)}"
 
+    @staticmethod
+    def set_pending_ocr_tests(sender_id, page_id, platform_id, tests):
+        """Deterministically write/clear the OCR marker line inside summary."""
+        client = Client.query.filter_by(
+            platform_id=platform_id, page_id=page_id, sender_id=sender_id
+        ).first()
+        if not client:
+            return None, "العميل غير موجود"
+        try:
+            clean = strip_ocr_marker(client.summary)
+            marker = build_ocr_marker(tests)
+            client.summary = (clean + "\n" + marker).strip() if marker else clean
+            db.session.commit()
+            return client, "تم تحديث التحاليل المستخرجة"
+        except Exception as e:
+            db.session.rollback()
+            return None, f"حدث خطأ أثناء تحديث التحاليل المستخرجة: {str(e)}"
+
+            
     @staticmethod
     def delete_client(platform_id, page_id, sender_id):
         client = Client.query.filter_by(

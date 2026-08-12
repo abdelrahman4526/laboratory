@@ -14,12 +14,31 @@ class WahaHandler(BaseHandler):
 
     def __init__(self, page):
         super().__init__(page)
-        self.base_url = os.environ.get("WAHA_API_URL", "http://waha:3000").rstrip("/")
-        self.session  = page.waha_session or "default"
+        self.base_url = self._resolve_base_url(getattr(page, "page_id", None))
+        self.session  =  "default"
         self.headers  = {
             "Content-Type": "application/json",
             "X-Api-Key": os.environ.get("WAHA_API_KEY", ""),
         }
+
+    @staticmethod
+    def _resolve_base_url(page_id):
+        """Pick the right WAHA container for this page, via env-var mapping."""
+        instances = [
+            (os.environ.get("WAHA1_PAGE_ID"), os.environ.get("WAHA1_BASE_URL")),
+            (os.environ.get("WAHA2_PAGE_ID"), os.environ.get("WAHA2_BASE_URL")),
+            (os.environ.get("WAHA3_PAGE_ID"), os.environ.get("WAHA3_BASE_URL")),
+            (os.environ.get("WAHA4_PAGE_ID"), os.environ.get("WAHA4_BASE_URL")),
+            (os.environ.get("WAHA5_PAGE_ID"), os.environ.get("WAHA5_BASE_URL")),
+        ]
+        for mapped_page_id, base_url in instances:
+            if page_id and mapped_page_id and page_id == mapped_page_id and base_url:
+                return base_url.rstrip("/")
+        logger.warning(
+            "[WAHA] No instance mapping for page_id=%s, falling back to WAHA_API_URL",
+            page_id,
+        )
+        return os.environ.get("WAHA_API_URL", "http://waha:3000").rstrip("/")
 
     @property
     def platform_name(self) -> str:

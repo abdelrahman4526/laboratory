@@ -42,10 +42,35 @@ logger = logging.getLogger(__name__)
 CONFIDENCE_THRESHOLD = 70
 
 # ── Prompt ────────────────────────────────────────────────────────────────────
+
 _PROMPT = """
 You are an expert laboratory prescription OCR system specialized in reading printed and handwritten medical prescriptions.
 
 Your task is to analyze the uploaded prescription image with high medical precision.
+
+
+first step:
+
+Transcribe EXACTLY and ONLY the handwritten/printed text visible in this
+medical prescription image. Do NOT interpret, expand, or identify lab tests.
+Just write out every word/abbreviation/character you can literally see,
+line by line, exactly as written. If a word is illegible, write [illegible]
+at that position. Do not add anything that is not visually present.
+
+
+Below is a raw transcription of a medical prescription (already verified,
+literal, no interpretation added). Extract ONLY the lab tests explicitly
+present in this transcription.
+
+Transcription:
+{transcription}
+
+Rules:
+- A test can ONLY be extracted if its name/abbreviation literally appears
+  in the transcription above.
+- Do NOT add related/commonly-ordered tests.
+- Ambiguous abbreviations -> unknown_items.
+
 
 STEP 1: Document Classification
 Determine the document_type:
@@ -72,25 +97,47 @@ If document_type is NOT "lab_prescription", return:
 
 STEP 3: Laboratory Investigation Extraction
 If document_type IS "lab_prescription":
-- Extract ONLY laboratory tests/investigations.
-- Recognize common shorthand (e.g., "S. Ca", "Vit D", "S. PTH", "S. Mg", "S. Uric Acid", "CBC", "T3/T4/TSH", "HbA1c").
-- Ignore: doctor info, patient info, diagnosis, oral medications, dates, addresses, phone numbers.
-- Do NOT invent or guess tests.
-- Put illegible or ambiguous fragments into "unknown_items".
-- Deduplicate identical tests.
+- Extract ONLY laboratory tests/investigations that are LITERALLY WRITTEN in the image.
+- Recognize common shorthand ONLY when the shorthand maps to exactly ONE test
+  (e.g., "S. Ca" -> Serum Calcium, "Vit D" -> Vitamin D, "CBC" -> Complete Blood Count).
+
+====================
+ANTI-HALLUCINATION RULE (STRICT — CRITICAL)
+====================
+- For EVERY item you put in "labs", the "matched_text" field MUST be a literal
+  substring you can visually point to in the image. If you cannot point to an
+  exact piece of handwriting/print supporting a specific test, DO NOT include it.
+- NEVER expand a single abbreviation, panel name, or unclear shorthand into
+  MULTIPLE separate standardized tests. For example, if you see an unclear or
+  ambiguous group of letters that MIGHT mean a panel (liver panel, kidney
+  panel, etc.), do NOT output each component test of that panel individually
+  — instead put the raw handwritten text into "unknown_items" as-is and let a
+  human decide.
+- NEVER add a test because it is "commonly ordered together with" a test you
+  did recognize. Every single item in "labs" must have its own distinct,
+  visible handwritten/printed evidence in the image — co-occurrence or
+  medical relevance to other tests is NOT evidence.
+- If you are not at least 85% confident you can read a specific abbreviation
+  correctly AND know exactly what single test it refers to, put it in
+  "unknown_items" instead of guessing.
+- Radiology/imaging items (X-Ray, CT, MRI, Ultrasound, etc.) are NEVER lab
+  tests — do not include them in "labs" even if physically present on the
+  same prescription; ignore them entirely (do not add to unknown_items
+  either, since they are out of scope, not unreadable).
 
 STEP 4: Structure Extracted Labs
 Each extracted test item in "labs" must contain:
 {
     "standardized_name": "Standard English/Medical Test Name",
-    "matched_text": "Exact raw text visible in image",
+    "matched_text": "Exact raw text visible in image (must be literally present)",
     "confidence": 95
 }
 
 STEP 5: Confidence Calculation
-- Calculate overall_confidence (0-100).
-- If overall_confidence >= 70  -> process_success = true
-- If overall_confidence <  70  -> process_success = false
+- Calculate overall_confidence (0-100) based on how much of the "labs" list
+  you are certain about.
+- If overall_confidence >= 85  -> process_success = true
+- If overall_confidence <  85  -> process_success = false
 
 Return ONLY valid JSON. No markdown backticks. No conversational text.
 """
@@ -144,15 +191,19 @@ def analyze_prescription(image_path: str) -> dict:
 
         start = time.time()
         response = gemini_client.models.generate_content(
-            model="gemini-3.5-flash-lite",
+           model="gemini-3.6-flash",
             contents=[img, _PROMPT],
             config=types.GenerateContentConfig(
-                response_mime_type="application/json"
+                response_mime_type="application/json",
+                thinking_config=types.ThinkingConfig(
+                    thinking_level="medium",
+                ),
             ),
         )
         elapsed_ms = round((time.time() - start) * 1000, 2)
 
         usage = response.usage_metadata
+
         logger.info(
             "[OCR] done | time=%s ms | in=%s | out=%s | total=%s",
             elapsed_ms,

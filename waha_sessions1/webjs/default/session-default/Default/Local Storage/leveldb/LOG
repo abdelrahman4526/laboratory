@@ -1,0 +1,15 @@
+2026/08/12-13:42:49.715 88 Reusing MANIFEST /app/.sessions/webjs/default/session-default/Default/Local Storage/leveldb/MANIFEST-000001
+2026/08/12-13:42:49.815 88 Recovering log #29
+2026/08/12-13:42:49.829 88 Reusing old log /app/.sessions/webjs/default/session-default/Default/Local Storage/leveldb/000029.log 
+2026/08/12-13:43:49.881 8a Level-0 table #33: started
+2026/08/12-13:43:49.886 8a Level-0 table #33: 12286 bytes OK
+2026/08/12-13:43:49.889 8a Delete type=0 #29
+2026/08/12-13:43:49.893 8a Compacting 4@0 + 1@1 files
+2026/08/12-13:43:49.897 8a Generated table #34@0: 326 keys, 19551 bytes
+2026/08/12-13:43:49.897 8a Compacted 4@0 + 1@1 files => 19551 bytes
+2026/08/12-13:43:49.899 8a compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/08/12-13:43:49.901 8a Delete type=2 #21
+2026/08/12-13:43:49.902 8a Delete type=2 #33
+2026/08/12-13:43:49.902 8a Delete type=2 #27
+2026/08/12-13:43:49.902 8a Delete type=2 #30
+2026/08/12-13:43:49.902 8a Delete type=2 #24

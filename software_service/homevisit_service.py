@@ -24,8 +24,9 @@ class homevisitService:
 
     # ── list / search ─────────────────────────────────────────────────────────
 
+    
     @staticmethod
-    def get_all_bookings(page=1, per_page=10, search=None, status=None):
+    def get_all_bookings(page=1, per_page=10, search=None, status=None, branch_id=None):
         query = Homevisit.query
 
         if search:
@@ -41,6 +42,12 @@ class homevisitService:
             try:
                 query = query.filter(Homevisit.status == Status(status))
             except ValueError:
+                pass
+
+        if branch_id:
+            try:
+                query = query.filter(Homevisit.branch_id == int(branch_id))
+            except (TypeError, ValueError):
                 pass
 
         query = query.order_by(Homevisit.booking_time.desc())
@@ -66,7 +73,7 @@ class homevisitService:
     # ── create ────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def create_visit(name, phone_number, date=None, details=None, comes_from=None,address=None, time=None):
+    def create_visit(name, phone_number, date=None, details=None, comes_from=None, address=None, time=None, branch_id=None):
         if not name or not name.strip():
             return homevisitResult(False, None, "اسم المريض مطلوب")
         if not phone_number or not phone_number.strip():
@@ -85,7 +92,7 @@ class homevisitService:
                 booking_time=datetime.now(timezone.utc),
                 address=address,
                 time=time,
-
+                branch_id=branch_id,
             )
             db.session.add(visit)
             db.session.commit()
@@ -94,7 +101,7 @@ class homevisitService:
             db.session.rollback()
             from sqlalchemy.exc import IntegrityError
             if isinstance(e, IntegrityError):
-                
+
                 reference_id = uuid.uuid4().hex[:12].upper()
                 try:
                     visit = Homevisit(
@@ -107,7 +114,8 @@ class homevisitService:
                         status=Status.PENDING,
                         booking_time=datetime.now(timezone.utc),
                         address=address,
-
+                        time=time,
+                        branch_id=branch_id,
                     )
                     db.session.add(visit)
                     db.session.commit()
@@ -116,7 +124,6 @@ class homevisitService:
                     db.session.rollback()
                     return homevisitResult(False, None, f"حدث خطأ أثناء إنشاء الحجز: {str(ex)}")
             return homevisitResult(False, None, f"حدث خطأ أثناء إنشاء الحجز: {str(e)}")
-
     # ── update ────────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -136,7 +143,9 @@ class homevisitService:
         if address is not None:
             visit.address = address
         if time is not None:
-            visit.time = time    
+            visit.time = time
+        if branch_id is not None:          # ← جديد
+            visit.branch_id = branch_id        
 
         # أي تعديل على الحجز يرجّعه Pending تلقائي، مهما كانت حالته قبل كده
         visit.status = Status.PENDING

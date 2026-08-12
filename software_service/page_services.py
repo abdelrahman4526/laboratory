@@ -21,7 +21,7 @@ class PageService:
         return page, "تم العثور على الصفحة"
 
     @staticmethod
-    def create_page(laboratory_id, platform_id, page_id, token):
+    def create_page(laboratory_id, platform_id, page_id, token, branch_id=None):
         page_id = page_id.strip()
         existing = Page.query.filter_by(platform_id=platform_id, page_id=page_id).first()
         if existing:
@@ -33,6 +33,7 @@ class PageService:
                 platform_id=platform_id,
                 page_id=page_id,
                 token=token.strip(),
+                branch_id=branch_id or None,
             )
             db.session.add(new_page)
             db.session.commit()
@@ -40,6 +41,20 @@ class PageService:
         except Exception as e:
             db.session.rollback()
             return None, f"حدث خطأ أثناء إضافة الصفحة: {str(e)}"
+
+
+    @staticmethod
+    def update_page_branch(platform_id, page_id, branch_id):
+        page = Page.query.filter_by(platform_id=platform_id, page_id=page_id).first()
+        if not page:
+            return None, "الصفحة غير موجودة"
+        try:
+            page.branch_id = branch_id or None
+            db.session.commit()
+            return page, "تم تحديث الفرع بنجاح"
+        except Exception as e:
+            db.session.rollback()
+            return None, f"حدث خطأ أثناء التحديث: {str(e)}"
 
     @staticmethod
     def update_page_token(platform_id, page_id, token):

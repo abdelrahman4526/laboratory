@@ -1,0 +1,20 @@
+2026/08/12-13:42:54.667 57 Reusing MANIFEST /app/.sessions/webjs/default/session-default/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/12-13:42:54.672 57 Recovering log #180
+2026/08/12-13:42:55.400 57 Reusing old log /app/.sessions/webjs/default/session-default/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000180.log 
+2026/08/12-13:43:26.583 5d Level-0 table #189: started
+2026/08/12-13:43:26.605 5d Level-0 table #189: 1115852 bytes OK
+2026/08/12-13:43:26.610 5d Delete type=0 #180
+2026/08/12-13:44:12.243 63 Compacting 1@1 + 5@2 files
+2026/08/12-13:44:12.470 63 Generated table #190@1: 83388 keys, 2231911 bytes
+2026/08/12-13:44:12.612 63 Generated table #191@1: 29689 keys, 2407394 bytes
+2026/08/12-13:44:12.728 63 Generated table #192@1: 25831 keys, 2165374 bytes
+2026/08/12-13:44:12.887 63 Generated table #193@1: 96838 keys, 2248214 bytes
+2026/08/12-13:44:12.908 63 Generated table #194@1: 9613 keys, 299355 bytes
+2026/08/12-13:44:12.908 63 Compacted 1@1 + 5@2 files => 9352248 bytes
+2026/08/12-13:44:12.912 63 compacted to: files[ 0 0 5 0 0 0 0 ]
+2026/08/12-13:44:12.912 63 Delete type=2 #182
+2026/08/12-13:44:12.914 63 Delete type=2 #186
+2026/08/12-13:44:12.914 63 Delete type=2 #189
+2026/08/12-13:44:12.914 63 Delete type=2 #184
+2026/08/12-13:44:12.915 63 Delete type=2 #183
+2026/08/12-13:44:12.915 63 Delete type=2 #185

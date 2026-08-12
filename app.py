@@ -311,6 +311,7 @@ def list_branches():
 
 
 # create a new branch
+# create a new branch
 @app.route('/branches/new', methods=['GET', 'POST'])
 @login_required
 def create_branch():
@@ -318,10 +319,18 @@ def create_branch():
         address = (request.form.get('address') or '').strip()
         phone = (request.form.get('phone') or '').strip() or None
         working_hours = (request.form.get('working_hours') or '').strip() or None
+        whatsapp_number = (request.form.get('whatsapp_number') or '').strip() or None
 
         if not address:
             flash('عنوان الفرع مطلوب.', 'error')
             return render_template('branches/create.html')
+
+        # تأكد إن الرقم مش متكرر على فرع تاني
+        if whatsapp_number:
+            existing = Branch.query.filter_by(whatsapp_number=whatsapp_number).first()
+            if existing:
+                flash(f'رقم الواتساب ده مستخدم بالفعل في فرع #{existing.id}.', 'error')
+                return render_template('branches/create.html')
 
         laboratory = get_default_laboratory()
 
@@ -330,6 +339,7 @@ def create_branch():
             address=address,
             phone=phone,
             working_hours=working_hours,
+            whatsapp_number=whatsapp_number,
         )
         db.session.add(branch)
         db.session.commit()
@@ -355,9 +365,22 @@ def edit_branch(branch_id):
             flash('عنوان الفرع مطلوب.', 'error')
             return render_template('branches/edit.html', branch=branch)
 
+        whatsapp_number = (request.form.get('whatsapp_number') or '').strip() or None
+
+        # تأكد إن الرقم مش متكرر على فرع تاني (غير الفرع الحالي نفسه)
+        if whatsapp_number:
+            existing = Branch.query.filter(
+                Branch.whatsapp_number == whatsapp_number,
+                Branch.id != branch_id
+            ).first()
+            if existing:
+                flash(f'رقم الواتساب ده مستخدم بالفعل في فرع #{existing.id}.', 'error')
+                return render_template('branches/edit.html', branch=branch)
+
         branch.address = address
         branch.phone = (request.form.get('phone') or '').strip() or None
         branch.working_hours = (request.form.get('working_hours') or '').strip() or None
+        branch.whatsapp_number = whatsapp_number
         db.session.commit()
 
         flash('تم حفظ التعديلات بنجاح.', 'success')
@@ -596,11 +619,13 @@ def list_bookings():
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '').strip() or None
     status = request.args.get('status', '').strip() or None
+    branch_id = request.args.get('branch_id', '').strip() or None   # ← جديد
 
     pagination, _ = homevisitService.get_all_bookings(
-        page=page, per_page=10, search=search, status=status
+        page=page, per_page=10, search=search, status=status, branch_id=branch_id  # ← جديد
     )
     stats = homevisitService.get_stats()
+    branches = Branch.query.all()   # ← جديد
 
     return render_template(
         'bookings/list.html',
@@ -608,6 +633,8 @@ def list_bookings():
         pagination=pagination,
         search=search,
         status_filter=status,
+        branch_filter=branch_id,      # ← جديد
+        branches=branches,            # ← جديد
         stats=stats,
         all_statuses=Status,
     )
@@ -628,6 +655,7 @@ def view_booking(visit_id):
 @app.route('/bookings/new', methods=['GET', 'POST'])
 @login_required
 def create_booking():
+    branches = Branch.query.all()
     if request.method == 'POST':
         result = homevisitService.create_visit(
             name=request.form.get('name'),
@@ -636,16 +664,17 @@ def create_booking():
             details=request.form.get('details') or None,
             comes_from='dashboard',
             address=request.form.get('address') or None,
+            branch_id=request.form.get('branch_id') or None,
         )
         if result.success:
             flash(result.message, 'success')
             return redirect(url_for('list_bookings'))
         flash(result.message, 'error')
 
-    return render_template('bookings/create.html')
-
+    return render_template('bookings/create.html', branches=branches)
 
 # edit an existing booking
+
 @app.route('/bookings/<int:visit_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_booking(visit_id):
@@ -669,7 +698,7 @@ def edit_booking(visit_id):
             status_result = homevisitService.update_status(visit_id, new_status)
             if status_result.success:
                 updated_visit = status_result.visit
-                if updated_visit and updated_visit.comes_from and updated_visit.comes_from.startswith("Facebook:"):
+                if updated_visit and updated_visit.comes_from and updated_visit.comes_from.split(":", 1)[0].lower() in ("facebook", "whatsapp"):
                     threading.Thread(
                         target=notify_client_status_change,
                         args=(visit_id,),
@@ -683,7 +712,6 @@ def edit_booking(visit_id):
 
     return render_template('bookings/edit.html', visit=visit, all_statuses=Status)
 
-
 # send a fixed status-update message to the client on their original chat (Facebook only)
 def notify_client_status_change(visit_id):
     with app.app_context():
@@ -692,16 +720,32 @@ def notify_client_status_change(visit_id):
             if not visit:
                 return "not_found"
 
-            if not visit.comes_from or not visit.comes_from.startswith("Facebook:"):
-                return "local_only"  # المصدر مش فيسبوك، مفيش شات نبعتله عليه
+            comes_from = visit.comes_from or ""
+            try:
+                platform, sender_id, page_id = comes_from.split(":", 2)
+            except ValueError:
+                return "local_only"  # مفيش شات نبعتله عليه
 
-            _, sender_id, page_id = visit.comes_from.split(":", 2)
+            platform_map = {
+                "facebook": FacebookHandler,
+                "whatsapp": WahaHandler,
+            }
+            platform_key = platform.lower()
+            if platform_key not in platform_map:
+                return "unknown_platform"
 
-            page = Page.query.filter_by(page_id=page_id).first()
+            platform_row = Platform.query.filter_by(name=platform_key).first()
+            if not platform_row:
+                return "platform_not_found"
+
+            page = Page.query.filter_by(
+                platform_id=platform_row.id,
+                page_id=page_id
+            ).first()
             if not page:
                 return "page_not_found"
 
-            handler = FacebookHandler(page)
+            handler = platform_map[platform_key](page)
             static_message = (
                 "تم تحديث حالة حجزك ✅\n"
                 f"رقم الطلب: *{visit.reference_id}*\n"
@@ -709,7 +753,6 @@ def notify_client_status_change(visit_id):
             )
             handler.send(sender_id, static_message)
 
-            # لو الحالة الجديدة "تم الحضور"، ابعت الـPDF بتاع التذكرة كمان
             print(f"[PDF DEBUG] visit_id={visit_id} | status={visit.status!r} | is_conformed={visit.status == Status.CONFIRMED}")
             if visit.status == Status.CONFIRMED:
                 try:
@@ -721,7 +764,6 @@ def notify_client_status_change(visit_id):
                         reference_id=visit.reference_id,
                         address=visit.address,
                         time=visit.time,
-                        
                     )
                     print(f"[PDF DEBUG] generate_booking_pdf returned type={type(pdf_bytes)} | len={len(pdf_bytes) if pdf_bytes else 0}")
                     if pdf_bytes:
@@ -750,6 +792,7 @@ def notify_client_status_change(visit_id):
         finally:
             db.session.remove()
 # update a booking's status (supports both form post and AJAX/json)
+
 @app.route('/bookings/<int:visit_id>/status', methods=['POST'])
 @login_required
 def update_booking_status(visit_id):
@@ -759,14 +802,14 @@ def update_booking_status(visit_id):
     notify_msg = None
     if result.success:
         visit = result.visit
-        if visit and visit.comes_from and visit.comes_from.startswith("Facebook:"):
+        if visit and visit.comes_from and visit.comes_from.split(":", 1)[0].lower() in ("facebook", "whatsapp"):
             threading.Thread(
                 target=notify_client_status_change,
                 args=(visit_id,),
                 daemon=True
             ).start()
         else:
-            notify_msg = "تم تأكيد الحجز وحفظ البيانات محلياً (المصدر ليس Facebook)."
+            notify_msg = "تم تأكيد الحجز وحفظ البيانات محلياً (المصدر ليس فيسبوك أو واتساب)."
 
     if request.is_json:
         return jsonify(
@@ -789,6 +832,7 @@ def delete_booking(visit_id):
 
 
 # doctor/admin confirms the booking from the dashboard; replies to the client (via Facebook if applicable)
+
 @app.route('/bookings/<int:visit_id>/confirm', methods=['POST'])
 @login_required
 def confirm_booking(visit_id):
@@ -797,7 +841,6 @@ def confirm_booking(visit_id):
         flash(msg, 'error')
         return redirect(url_for('list_bookings'))
 
-    # رسالة التأكيد النهائية اللي هتتبعت للعميل
     message_lines = [
         "تم تأكيد حجز الزيارة المنزلية الخاصة بك ويرجي التاكد من المعاد ✅",
         f"الاسم: {visit.name}",
@@ -808,34 +851,51 @@ def confirm_booking(visit_id):
     if visit.details:
         message_lines.append(f"تفاصيل: {visit.details}")
     if visit.time:
-        message_lines.append(f"الساعه: {visit.time}" )   
+        message_lines.append(f"الساعه: {visit.time}")
     message_lines.append("شكراً لتعاملك معنا.")
     reply_text = "\n".join(message_lines)
 
     comes_from = visit.comes_from or ""
-    if not comes_from.startswith("Facebook:"):
+    try:
+        platform, sender_id, page_id = comes_from.split(":", 2)
+    except ValueError:
         visit.status = Status.CONFIRMED
         db.session.commit()
-        flash('تم تأكيد الحجز وحفظ البيانات محلياً (المصدر ليس Facebook).', 'success')
+        flash('تم تأكيد الحجز وحفظ البيانات محلياً (لا يوجد مصدر خارجي).', 'success')
         return redirect(url_for('list_bookings'))
 
-    parts = comes_from.split(":")
-    sender_id = parts[1]
-    page_id = parts[2]
+    platform_map = {
+        "facebook": FacebookHandler,
+        "whatsapp": WahaHandler,
+    }
+    platform_key = platform.lower()
+    if platform_key not in platform_map:
+        visit.status = Status.CONFIRMED
+        db.session.commit()
+        flash('تم تأكيد الحجز وحفظ البيانات محلياً (منصة غير مدعومة).', 'success')
+        return redirect(url_for('list_bookings'))
 
-    page = Page.query.filter_by(page_id=page_id).first()
+    platform_row = Platform.query.filter_by(name=platform_key).first()
+    if not platform_row:
+        flash('منصة غير معروفة.', 'error')
+        return redirect(url_for('list_bookings'))
+
+    page = Page.query.filter_by(
+        platform_id=platform_row.id,
+        page_id=page_id
+    ).first()
     if not page:
         flash('الصفحة المرتبطة بهذا الحجز غير موجودة.', 'error')
         return redirect(url_for('list_bookings'))
 
     try:
-        handler = FacebookHandler(page)
+        handler = platform_map[platform_key](page)
         handler.send(sender_id, reply_text)
 
         ClientService.update_client_summary_and_last_bot_message(
             sender_id=sender_id,
             page_id=page_id,
-            platform_id=2,
+            platform_id=platform_row.id,
             summary=f"Admin confirmed home visit booking for {visit.name} on {visit.date}.",
             last_bot_message=reply_text
         )
@@ -849,8 +909,6 @@ def confirm_booking(visit_id):
         flash(f'حدث خطأ أثناء إرسال الرد: {str(e)}', 'error')
 
     return redirect(url_for('list_bookings'))
-
-
 
 # doctor/admin confirms the booking from the dashboard; replies to the client (via Facebook if applicable)
 
@@ -948,27 +1006,28 @@ def confirm_inquiry(inquiry_id):
         platform, sender_id, page_id = comes_from.split(":", 2)
     except ValueError:
         inquiry.services_mentioned = ", ".join(service_names)
-        inquiry.status = Status.REVIEWED
+        inquiry.status = Status.DONE
         db.session.commit()
 
         flash("تمت المراجعة وحفظ البيانات محلياً.", "success")
         return redirect(url_for("inquiry_detail", inquiry_id=inquiry_id))
 
     platform_map = {
-        "Facebook": (2, FacebookHandler),
-        "WhatsApp": (1, WahaHandler),
+        "facebook": FacebookHandler,
+        "whatsapp": WahaHandler,
     }
-
     if platform not in platform_map:
         inquiry.services_mentioned = ", ".join(service_names)
-        inquiry.status = Status.REVIEWED
+        inquiry.status = Status.DONE
         db.session.commit()
-
         flash("تمت المراجعة وحفظ البيانات محلياً.", "success")
         return redirect(url_for("inquiry_detail", inquiry_id=inquiry_id))
-
-    platform_id, handler_class = platform_map[platform]
-
+    handler_class = platform_map[platform]
+    platform_row = Platform.query.filter_by(name=platform).first()
+    if not platform_row:
+        flash("منصة غير معروفة.", "error")
+        return redirect(url_for("inquiry_detail", inquiry_id=inquiry_id))
+    platform_id = platform_row.id
     page = Page.query.filter_by(
         platform_id=platform_id,
         page_id=page_id
@@ -991,7 +1050,7 @@ def confirm_inquiry(inquiry_id):
         )
 
         inquiry.services_mentioned = ", ".join(service_names)
-        inquiry.status = Status.REVIEWED
+        inquiry.status = Status.DONE
         db.session.commit()
 
         flash("تم تأكيد الروشتة وإرسالها للمستخدم بنجاح.", "success")
@@ -1086,23 +1145,24 @@ def list_pages():
 @login_required
 def create_page():
     platforms, _ = PageService.get_all_platforms()
+    branches = Branch.query.all()   # ← جديد
 
     if request.method == 'POST':
         platform_id = request.form['platform_id']
         page_id = request.form['page_id']
         token = request.form['token']
+        branch_id = request.form.get('branch_id') or None   # ← جديد
         laboratory_id = LaboratoryService.get_current_laboratory_id()
 
-        page, msg = PageService.create_page(laboratory_id, platform_id, page_id, token)
+        page, msg = PageService.create_page(laboratory_id, platform_id, page_id, token, branch_id)  # ← عدّلنا هنا
         if page:
             flash(msg, 'success')
             return redirect(url_for('list_pages'))
         flash(msg, 'error')
 
-    return render_template('pages/create.html', platforms=platforms)
+    return render_template('pages/create.html', platforms=platforms, branches=branches)  # ← عدّلنا هناs)
 
 
-# edit a page's token
 @app.route('/pages/<int:platform_id>/<page_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_page(platform_id, page_id):
@@ -1110,16 +1170,19 @@ def edit_page(platform_id, page_id):
     if not page:
         flash(msg, 'error')
         return redirect(url_for('list_pages'))
+    branches = Branch.query.all()
 
     if request.method == 'POST':
         token = request.form['token']
+        branch_id = request.form.get('branch_id') or None
         updated, msg = PageService.update_page_token(platform_id, page_id, token)
+        PageService.update_page_branch(platform_id, page_id, branch_id)
         if updated:
             flash(msg, 'success')
             return redirect(url_for('list_pages'))
         flash(msg, 'error')
 
-    return render_template('pages/edit.html', page=page)
+    return render_template('pages/edit.html', page=page, branches=branches)
 
 
 # disconnect a page
@@ -1130,6 +1193,10 @@ def delete_page(platform_id, page_id):
     flash(msg, 'success' if page else 'error')
     return redirect(url_for('list_pages'))
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# Client routes (scoped to a page)
+# ══════════════════════════════════════════════════════════════════════════
 
 # ══════════════════════════════════════════════════════════════════════════
 # Client routes (scoped to a page)
@@ -1161,14 +1228,13 @@ def edit_client(platform_id, page_id, sender_id):
         return redirect(url_for('list_clients', platform_id=platform_id, page_id=page_id))
 
     if request.method == 'POST':
-        summary = request.form['summary']
+        summary = request.form.get('summary')
         updated, msg = PageService.update_client_summary(platform_id, page_id, sender_id, summary)
+        flash(msg, 'success' if updated else 'error')
         if updated:
-            flash(msg, 'success')
             return redirect(url_for('list_clients', platform_id=platform_id, page_id=page_id))
-        flash(msg, 'error')
 
-    return render_template('pages/client_edit.html', client=client)
+    return render_template('pages/edit_client.html', client=client)
 
 
 # delete a client
@@ -1178,7 +1244,6 @@ def delete_client(platform_id, page_id, sender_id):
     client, msg = PageService.delete_client(platform_id, page_id, sender_id)
     flash(msg, 'success' if client else 'error')
     return redirect(url_for('list_clients', platform_id=platform_id, page_id=page_id))
-
 
 # ══════════════════════════════════════════════════════════════════════════
 # Platform routes (e.g. Facebook, Instagram, WhatsApp)
@@ -1442,12 +1507,11 @@ def fb_webhook():
                     # ── comments ──────────────────────────────────────────
                     for change in entry.get("changes", []):
                         print(f"[DEBUG CHANGE VALUE] {change.get('value', {})}")
-                        comment_id = parse_facebook_comment(change)
-
-                        if not comment_id:
+                        comment_data = parse_facebook_comment(change)
+                        if not comment_data:
                             continue
-                        print(f"[DEBUG COMMENT] comment_id={comment_id}")
-                        handler.handle_comment(comment_id)
+                        print(f"[DEBUG COMMENT] {comment_data}")
+                        handler.handle_comment(comment_data["comment_id"], comment_data["page_id"])
 
             except Exception:
                 import traceback
@@ -1463,101 +1527,85 @@ def fb_webhook():
 def waha_webhook():
     logger.info("Webhook received")
     print("webhook received")
-
     try:
         data = request.json or {}
         logger.info(data)
     except Exception:
         return "OK", 200
-
     payload = data.get("payload", {})
-    print(payload)
     session_name = data.get("session")
-    print(session_name)
 
-    def process(payload, session_name):
+    def process(payload, session_name, data):
         with app.app_context():
             try:
                 whatsapp_platform = Platform.query.filter_by(
                     name="whatsapp"
                 ).first()
-
                 if not whatsapp_platform:
                     logger.error("WhatsApp platform not found")
                     return
 
-                page = Page.query.filter_by(
-                    platform_id=whatsapp_platform.id
-                ).first()
+                me_lid = (data.get("me") or {}).get("lid")
+                if not me_lid:
+                    logger.error("Webhook payload missing me.lid; cannot route")
+                    return
 
+                page = Page.query.filter_by(
+                    platform_id=whatsapp_platform.id,
+                    page_id=me_lid,
+                ).first()
                 if not page:
-                    logger.error("WhatsApp page not found")
+                    logger.error(
+                        "No WhatsApp page matches me.lid=%s (unregistered number?)",
+                        me_lid,
+                    )
                     return
 
                 logger.info(
                     "Using WhatsApp page: %s",
                     page.page_id
                 )
-
                 handler = WahaHandler(page)
-
-                # Subscription
                 subscription = SubscriptionService.get_by_page(page)
-
                 message = handler.parse_message(
                     payload,
                     page.page_id
                 )
-
                 if not message:
                     logger.info("Message ignored")
                     return
-
                 allowed, _ = SubscriptionService.can_use_ai(subscription)
-
                 if not allowed:
                     logger.warning(
                         "Subscription limit reached for laboratory_id=%s",
                         page.laboratory_id,
                     )
                     return
-
                 handler.send_typing(message.sender_id)
 
-                # NOTE: handler.handle() -> run_agent() already deducts
-                # this message + its real cost from the subscription
-                # internally (see message_processor._consume_subscription).
-                # Do not call SubscriptionService.consume() again here —
-                # that would double-count usage for every reply sent.
                 reply, ticket_bytes = handler.handle(message)
-
                 logger.info(
                     "[WAHA] sender=%s has_reply=%s has_ticket=%s",
                     message.sender_id,
                     bool(reply),
                     bool(ticket_bytes),
                 )
-
                 if reply:
                     handler.send(
                         message.sender_id,
                         reply,
                     )
-
                 if ticket_bytes:
                     handler.send_image(
                         recipient_id=message.sender_id,
                         file_bytes=ticket_bytes,
                         filename="booking_ticket.png",
                     )
-
             except Exception as e:
                 db.session.rollback()
                 logger.exception("WAHA webhook processing error")
-
                 try:
                     from notfication_center.emailsender import send_production_alert
-
                     send_production_alert(
                         subject="WAHA Webhook Worker Failure",
                         body_or_error=e,
@@ -1565,19 +1613,15 @@ def waha_webhook():
                             "session_name": session_name
                         }
                     )
-
                 except Exception:
                     logger.exception("Failed to send production alert")
-
             finally:
                 db.session.remove()
-
     threading.Thread(
                 target=process,
-                args=(payload, session_name),
+                args=(payload, session_name, data),
                 daemon=True
                   ).start()
-
     return "OK", 200
 
 
@@ -1588,4 +1632,4 @@ def waha_webhook():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    app.run(debug=false)

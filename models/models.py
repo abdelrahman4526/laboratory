@@ -39,6 +39,7 @@ class Branch(db.Model):
     address = db.Column(db.String(200), nullable=False)
     phone = db.Column(db.String(50))
     working_hours = db.Column(db.String(200))
+    whatsapp_number = db.Column(db.String(64), unique=True, nullable=True, index=True)
    
 
 
@@ -98,7 +99,8 @@ class Page(db.Model):
     platform_id = db.Column(db.Integer, db.ForeignKey('platforms.id'), nullable=False)
     page_id = db.Column(db.String(100), nullable=False)
     token = db.Column(db.Text, nullable=False)
-
+    branch_id = db.Column(db.Integer, db.ForeignKey('branches.id'), nullable=True)  # ← جديد
+    branch = db.relationship('Branch', backref='pages') 
     clients = db.relationship('Client', backref='page', lazy=True)
 
 class Client(db.Model):
@@ -115,6 +117,7 @@ class Client(db.Model):
     sender_id = db.Column(db.String(100), nullable=False)
     summary = db.Column(db.Text)
     last_bot_message = db.Column(db.Text)
+    
     expiration_date = db.Column(db.DateTime)
 
 class Complaint(db.Model):
@@ -140,6 +143,8 @@ class Homevisit(db.Model):
     time = db.Column(db.String(20), nullable=True)
     comes_from = db.Column(db.String(100))
     address = db.Column(db.String(255), nullable=False)
+    branch_id = db.Column(db.Integer, db.ForeignKey('branches.id'), nullable=True, index=True)
+    branch = db.relationship('Branch', backref='homevisits')
 
 class RequestCounter(db.Model):
     __tablename__ = 'request_counter'

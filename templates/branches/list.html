@@ -126,6 +126,19 @@
           <i data-lucide="phone" style="width: 15px; height: 15px; color: var(--primary);"></i>
           <span>الهاتف: <strong style="color: var(--text-primary); font-family: monospace;">{{ branch.phone or 'غير محدد' }}</strong></span>
         </div>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <i data-lucide="message-circle" style="width: 15px; height: 15px; color: {{ '#25D366' if branch.whatsapp_number else '#ef4444' }};"></i>
+          <span>
+            واتساب:
+            {% if branch.whatsapp_number %}
+              <strong style="color: var(--text-primary); font-family: monospace;">{{ branch.whatsapp_number }}</strong>
+            {% else %}
+              <strong style="color: #ef4444;">غير مربوط</strong>
+            {% endif %}
+          </span>
+        </div>
+
         <div style="display: flex; align-items: center; gap: 8px;">
           <i data-lucide="clock" style="width: 15px; height: 15px; color: #f59e0b;"></i>
           <span>مواعيد العمل: {{ branch.working_hours or 'غير محددة' }}</span>

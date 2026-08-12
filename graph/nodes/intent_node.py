@@ -154,27 +154,54 @@ contains the SAME number of search objects.
 
 Never silently drop a mentioned test.
 
-====================================================
+====================
 Conversation Continuation
-====================================================
+====================
 
-If the conversation summary indicates the user is
-already inside a booking flow,
+If the conversation summary or last bot message indicates the user is
+already inside an ACTIVE booking flow (e.g. all fields were just
+collected and the bot is waiting for the patient's confirmation to SAVE
+the booking, e.g. "هل تود تأكيد حجز الزيارة المنزلية بهذه البيانات؟"),
+you MUST keep the intent as "visit" for ANY short affirmative/confirmation
+reply, regardless of the exact wording — this includes but is NOT limited to:
 
-keep the intent as booking,
+"تمام", "اكمل", "ايوة", "اه", "ماشي", "تمام كده", "اوك", "yes", "confirm",
+"موافق", "حاضر"
 
-even if the latest message is short, such as:
+Do NOT restrict this to only the words listed above — any short reply that
+functions as an agreement/confirmation in context (based on the last bot
+message asking for confirmation) must be classified as "visit", never
+"direct". Only classify as "direct" if the message is CLEARLY unrelated
+small talk (e.g. "شكراً", "ازيك", greetings with no connection to the
+pending confirmation).
 
-"تمام"
+--------------------
+EXCEPTION — CHOICE QUESTIONS (CRITICAL, CHECK THIS FIRST):
+--------------------
+If the last bot message instead offers the patient a CHOICE between TWO
+DIFFERENT paths — for example "هل ترغب في المزيد من المعلومات التفصيلية
+لهذه التحاليل ام حجز زيارة منزلية؟" (details/info VS booking) — you MUST
+NOT auto-classify as "visit" just because the reply contains an
+affirmative word like "اه"/"ايوة"/"تمام". Instead, read the REST of the
+reply to determine which option the patient picked:
 
-"اكمل"
+  - If the reply asks for or implies wanting details, information,
+    prices, preparation, test explanations, etc. (e.g. contains
+    "معلومات", "تفاصيل", "الاسعار", "اسعار", "بكام", "اعرف اكتر", or
+    similar) → classify as "inquiry", and generate refined_queries for
+    the tests using the PREVIOUSLY EXTRACTED PRESCRIPTION TESTS list
+    below (since the user did not repeat the test names).
+  - If the reply asks for or implies wanting to proceed with the
+    booking itself (e.g. "احجز", "زيارة", "عايز الحجز", "كمل الحجز")
+    → classify as "visit".
+  - Only if the reply is a BARE affirmative with literally nothing else
+    ("اه" / "تمام" / "ايوة" and nothing more, no other words at all) →
+    default to "visit", since booking is the primary flow.
 
-"ايوة"
-
-"yes"
-
-"confirm"
-
+A message like "اه هتعلي معلومات اكتر" or "اه عايز اعرف الاسعار" is NOT a
+bare affirmative — the "اه" here is just a filler opener, and the real
+content ("هتعلي معلومات اكتر" / "عايز اعرف الاسعار") clearly requests
+information, so it MUST be classified as "inquiry", never "visit".
 
 ====================
 LAB INFORMATION FORMATTING
@@ -205,15 +232,27 @@ Return ONLY the structured output.
 [Same plain text as <REPLY>. This will be used as context in the next conversation turn.]
 </LAST_BOT_REPLY>
 <SUMMARY>
-[Cumulative conversation summary. STRICT RULES:
-1. Build on the previous summary — copy it first, then update only what changed.
-2. Always capture in this structure:
-   - User Info: any personal details mentioned (name, phone, company, role, etc.)
-   - Intent: what the user is trying to accomplish
-   - Key Points: important topics, questions, or concerns raised
-   - Status: what just happened + what is still pending
-3. Extract User Info from ANY message — not just booking context.
-4. Use English regardless of conversation language.]
+[Update the PREVIOUS_SUMMARY below by merging in NEW information from this turn only.
+NEVER delete or overwrite a fact unless the user explicitly corrected or changed it.
+If nothing new was said in a section, copy that section unchanged.
+
+Required structure (always output all 4 sections, even if empty — write "None yet"):
+
+- User Info: name, phone, company, role, or any personal detail mentioned so far (cumulative — never drop old ones)
+- Intent: the user's current goal (update only if it changed; otherwise keep as-is)
+- Key Points: bullet list of topics/questions/tests/services discussed (append new ones, don't repeat old ones verbatim, max 8 bullets — merge/trim oldest if exceeded)
+- Status: last action taken by bot + what is still pending/unanswered
+
+Example output format:
+User Info: name=abdelrahman Hussien
+Intent: booking a lab test panel (liver + kidney function)
+Key Points: asked about CBC, RBS, ALT/AST, lipid profile, creatinine, urea, ESR, FBS, HBsAg, bilirubin prices; confirmed she wants home sample collection
+Status: bot sent price list; waiting for user to confirm date/time for home visit
+
+Previous Summary:
+{PREVIOUS_SUMMARY}
+
+Extract User Info from ANY message, not just booking-related ones. Use English regardless of conversation language.]
 </SUMMARY>
 """
 
@@ -222,17 +261,36 @@ def intent_node(state: AgentState):
     user_message = state["user_message"]
     summary = state.get("summary", "")
     sender_id = state.get("sender_id")
- 
+    ocr_tests = state.get("ocrextracted_tests") or []          # <-- NEW
+
     logger.info(
         "[Intent Node] start | sender_id=%s | message=%r",
         sender_id, user_message,
     )
+    if user_message.strip().startswith("[Prescription OCR Extracted Text]"):
+        logger.info(
+            "[Intent Node] forced intent=homevisit (OCR marker detected) | sender_id=%s",
+            sender_id,
+        )
+        return {
+            "intent": IntentType.VISIT.value,
+            "refined_queries": [],
+            "intent_usage": None,
+        }
 
     llm = get_gemini()
 
     structured_llm = llm.with_structured_output(
         IntentResponse,
         include_raw=True
+    )
+
+    # <-- NEW: build a block listing the tests already extracted from a
+    # prescription image earlier in this conversation, so the LLM can
+    # generate refined_queries for them even when the user's message
+    # itself doesn't repeat the test names (e.g. "فين الاسعار").
+    ocr_tests_block = (
+        "\n".join(f"- {t}" for t in ocr_tests) if ocr_tests else "NONE"
     )
 
     messages = [
@@ -243,6 +301,18 @@ def intent_node(state: AgentState):
 
 Conversation Summary:
 {summary}
+
+====================
+PREVIOUSLY EXTRACTED PRESCRIPTION TESTS (if any)
+====================
+If the user's message refers back to tests already extracted from a
+prescription (e.g. "فين الاسعار", "بكام دول", "الاسعار ايه", "these tests")
+WITHOUT repeating the test names, you MUST generate ONE refined search
+object for EACH test listed below — do NOT fall back to one generic
+query like "Laboratory Test Prices".
+
+Extracted Tests:
+{ocr_tests_block}
 """
         ),
 

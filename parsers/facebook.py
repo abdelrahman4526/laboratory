@@ -76,29 +76,30 @@ def parse_facebook_message(
         return None
 
 
-def parse_facebook_comment(change: dict) -> str | None:
+def parse_facebook_comment(change: dict) -> dict | None:
     try:
-        # must be a feed change
         if change.get("field") != "feed":
             return None
 
         value = change.get("value", {})
 
-        # must be a new comment (not edit/delete/like/...)
         if value.get("item") != "comment" or value.get("verb") != "add":
             return None
 
-        # ignore replies to other comments (has parent_id != post_id)
         if value.get("parent_id") and value.get("parent_id") != value.get("post_id"):
             return None
 
         comment_id = value.get("comment_id")
         if not comment_id:
             return None
-        if "_" in comment_id:  # Facebook sometimes sends comment_id as "postid_commentid"
-            comment_id = comment_id.split("_")[1]
 
-        return comment_id
+        
+        page_id = value.get("post_id", "").split("_")[0] if value.get("post_id") else None
+
+        return {
+            "comment_id": comment_id,
+            "page_id": page_id,
+        }
 
     except Exception:
         logger.critical(

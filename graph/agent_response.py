@@ -5,7 +5,7 @@ from typing import Optional, Any
 class AgentResponse:
     response:        str
     intent:          Optional[str]
-    booking_saved:   Optional[bool]
+    visit_saved:   Optional[bool]
     complaint_saved: Optional[bool]
     inquiry_saved:   Optional[bool]
     usage:           dict
@@ -24,7 +24,7 @@ class AgentResponse:
         return AgentResponse(
             response        = result.get("response") or "",
             intent          = result.get("intent"),
-            booking_saved   = result.get("booking_saved"),
+            visit_saved   = result.get("visit_saved"),
             complaint_saved = result.get("complaint_saved"),
             inquiry_saved   = result.get("inquiry_saved"),
             usage           = usage,
@@ -34,7 +34,7 @@ class AgentResponse:
         return {
             "response":        self.response,
             "intent":          self.intent,
-            "booking_saved":   self.booking_saved,
+            "visit_saved":     self.visit_saved,
             "complaint_saved": self.complaint_saved,
             "inquiry_saved":   self.inquiry_saved,
             "usage":           self.usage,

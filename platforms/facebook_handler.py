@@ -27,18 +27,47 @@ class FacebookHandler(BaseHandler):
 
     # ── text ─────────────────────────────────────────────────────────────────
 
+    MAX_FB_TEXT_LEN = 2000
+
+    def _split_text(self, text: str, max_len: int = None):
+        """يقسم النص لأجزاء كل جزء أقل من أو يساوي الحد الأقصى، من غير ما يقطع كلمة نص نص."""
+        max_len = max_len or self.MAX_FB_TEXT_LEN
+        text = text.strip()
+        if len(text) <= max_len:
+            return [text]
+
+        parts = []
+        while len(text) > max_len:
+            split_at = text.rfind("\n\n", 0, max_len)
+            if split_at == -1:
+                split_at = text.rfind("\n", 0, max_len)
+            if split_at == -1:
+                split_at = text.rfind(" ", 0, max_len)
+            if split_at == -1:
+                split_at = max_len
+            parts.append(text[:split_at].strip())
+            text = text[split_at:].strip()
+        if text:
+            parts.append(text)
+        return parts
+
     def send(self, recipient_id: str, text: str):
         if not text or not text.strip():
             return None
 
-        logger.debug("[FB SEND] to=%s", recipient_id)
+        chunks = self._split_text(text)
+        last_response = None
 
-        payload = {
-            "messaging_type": "RESPONSE",
-            "recipient": {"id": recipient_id},
-            "message":   {"text": text},
-        }
-        return self._post_json(f"{self.base_url}/me/messages", payload)
+        for i, chunk in enumerate(chunks):
+            logger.debug("[FB SEND] to=%s part=%d/%d", recipient_id, i + 1, len(chunks))
+            payload = {
+                "messaging_type": "RESPONSE",
+                "recipient": {"id": recipient_id},
+                "message":   {"text": chunk},
+            }
+            last_response = self._post_json(f"{self.base_url}/me/messages", payload)
+
+        return last_response
 
     # ── file (PDF ticket) ─────────────────────────────────────────────────────
 
@@ -96,10 +125,15 @@ class FacebookHandler(BaseHandler):
 
     # ── comments ─────────────────────────────────────────────────────────────
 
-    def handle_comment(self, comment_id: str):
+    def handle_comment(self, comment_id: str, page_id: str):
         self.react_to_comment(comment_id)
         self.reply_to_comment(comment_id)
-        self.send_private_reply(comment_id)
+        self.send_private_reply(
+            page_id,
+            self.token,
+            comment_id,
+            "أهلاً! شكراً على تعليقك، كيف نقدر نساعدك؟"
+        )
 
     def react_to_comment(self, comment_id: str):
         logger.debug("[FB LIKE COMMENT] comment_id=%s", comment_id)
@@ -128,17 +162,40 @@ class FacebookHandler(BaseHandler):
             f"{self.base_url}/{comment_id}/comments", payload
         )
 
-    def send_private_reply(
-        self,
-        comment_id: str,
-        text: str = "أهلاً! شكراً على تعليقك، كيف نقدر نساعدك؟",
-    ):
-        """Send a private reply to a comment via Facebook private_replies API."""
-        logger.debug("[FB PRIVATE REPLY] comment_id=%s", comment_id)
-        payload = {"message": text}
-        return self._post_json(
-            f"{self.base_url}/{comment_id}/private_replies", payload
-        )
+    def send_private_reply(self, page_id, page_access_token: str, comment_id: str, text: str):
+        """
+        Send a private reply (Messenger message) to a user who commented on your Page's post.
+        Requirements:
+          - Use a valid Page access token
+          - Comment must be on a Page-owned post
+          - Only works within 7 days of the comment
+          - Only one private reply per comment
+        """
+        logger.debug("[FB PRIVATE REPLY] comment_id=%s page_id=%s", comment_id, page_id)
+
+        url = f"{self.base_url}/{page_id}/messages"
+        params = {"access_token": page_access_token}
+        payload = {
+            "recipient": {"comment_id": comment_id},
+            "message": {"text": text},
+            "messaging_type": "RESPONSE"
+        }
+
+        response = requests.post(url, params=params, json=payload)
+
+        try:
+            data = response.json()
+        except ValueError:
+            data = {"raw": response.text}
+
+        if response.status_code not in [200, 201]:
+            logger.error("[FB PRIVATE REPLY ERROR] status=%s body=%s", response.status_code, data)
+
+        return {
+            "status": response.status_code,
+            "ok": response.ok,
+            "data": data
+        }
 
     # ── helpers ───────────────────────────────────────────────────────────────
 

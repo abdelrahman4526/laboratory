@@ -12,6 +12,7 @@ def save_visit_tool(
     address: str,
     time: str,
     comes_from: str = "unknown",
+    branch_id: int | None = None,
     
 ) -> homevisitResult:
     """
@@ -29,4 +30,5 @@ def save_visit_tool(
         address= address,
         comes_from=comes_from,
         time= time,
+        branch_id=branch_id,
     )

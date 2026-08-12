@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
-{% block title %}تعديل بيانات الفرع{% endblock %}
-{% block topbar_title %}تعديل الفرع{% endblock %}
+{% block title %}تعديل الفرع{% endblock %}
+{% block topbar_title %}تعديل بيانات الفرع{% endblock %}
 {% block topbar_sub %}{{ branch.address }}{% endblock %}
 
 {% block content %}
@@ -9,11 +9,11 @@
   <div class="card-header" style="padding-bottom:1rem;margin-bottom:1.5rem;border-bottom:1px solid var(--surface-border);">
     <div style="display:flex;align-items:center;gap:12px;">
       <div style="width:40px;height:40px;border-radius:10px;background:rgba(99,102,241,0.12);color:var(--primary);display:flex;align-items:center;justify-content:center;">
-        <i data-lucide="edit-3" style="width:20px;height:20px;"></i>
+        <i data-lucide="git-branch" style="width:20px;height:20px;"></i>
       </div>
       <div>
-        <h3 class="card-title" style="font-size:1.2rem;font-weight:700;margin:0;">تعديل بيانات الفرع #{{ branch.id }}</h3>
-        <p style="font-size:0.85rem;color:var(--text-muted);margin:2px 0 0 0;">تحديث العنوان أو رقم الهاتف أو مواعيد العمل</p>
+        <h3 class="card-title" style="font-size:1.2rem;font-weight:700;margin:0;">تعديل بيانات الفرع</h3>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin:2px 0 0 0;">فرع #{{ branch.id }}</p>
       </div>
     </div>
   </div>
@@ -48,6 +48,24 @@
           class="form-control"
           value="{{ request.form.get('phone', branch.phone or '') }}"
         >
+      </div>
+
+      <!-- رقم واتساب الفرع -->
+      <div class="form-group">
+        <label class="form-label" style="font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+          <i data-lucide="message-circle" style="width:16px;height:16px;color:#25D366;"></i>
+          رقم واتساب الفرع (المستخدم في البوت)
+        </label>
+        <input
+          type="text"
+          name="whatsapp_number"
+          class="form-control"
+          placeholder="مثال: 201040320487@c.us"
+          value="{{ request.form.get('whatsapp_number', branch.whatsapp_number or '') }}"
+        >
+        <small style="color:var(--text-muted);font-size:0.78rem;margin-top:4px;display:block;">
+          هذا الرقم يحدد الفرع تلقائياً عند وصول رسالة من العميل على واتساب
+        </small>
       </div>
 
       <!-- مواعيد العمل -->
